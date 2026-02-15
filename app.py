@@ -1,48 +1,12 @@
-"""
-=============================================================================
-CRYPTO FUTURES SCANNER DASHBOARD
-=============================================================================
-A live, auto-refreshing crypto futures scanner with two engines:
-  - Engine A: Multi-pair futures scanner (3m / 5m)
-  - Engine B: BTC Liquidity + Sweep Engine (1H)
-
-DATA SOURCES (all public, no API keys required):
-  - OKX, Gate.io, MEXC for multi-pair scanner
-  - Binance for BTC Liquidity Engine
-
-=============================================================================
-STREAMLIT CLOUD DEPLOYMENT INSTRUCTIONS
-=============================================================================
-
-1. REPOSITORY SETUP:
-   - Create a new GitHub repository
-   - Add app.py and requirements.txt to the root of the repo
-   - Commit and push both files
-
-2. STREAMLIT CLOUD:
-   - Go to https://share.streamlit.io
-   - Click "New app"
-   - Connect your GitHub account and select the repository
-   - Set Main file path: app.py
-   - Click "Deploy!"
-
-3. ENVIRONMENT:
-   - No secrets or API keys required (all public endpoints)
-   - Python 3.9+ recommended
-   - requirements.txt is auto-installed by Streamlit Cloud
-
-4. PERFORMANCE NOTES:
-   - App auto-refreshes every 60 seconds via streamlit-autorefresh
-   - Cache TTL is set to 60 seconds (@st.cache_data(ttl=60))
-   - "Scan Now" button clears cache and forces immediate refresh
-   - On Streamlit Cloud free tier, expect ~3-6s load time per refresh
-
-5. TROUBLESHOOTING:
-   - If exchanges return errors, the app falls back gracefully
-   - Rate limits: app uses public REST endpoints with no auth
-   - If data is stale, click "Scan Now" to force refresh
-
-=============================================================================
+ """
+=====================================================================
+BTC EXPANSION EDGE SCANNER
+Streamlit Cloud — Single File app.py
+-------------------------------------
+Deploy: Push app.py + requirements.txt to GitHub root
+        → share.streamlit.io → New App → select repo → Deploy
+No API keys required. All public endpoints.
+=====================================================================
 """
 
 import streamlit as st
@@ -62,91 +26,107 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
+
 st.set_page_config(
-    page_title="Crypto Futures Scanner",
+    page_title="Edge Scanner",
     page_icon="📡",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# Light theme CSS
 st.markdown("""
 <style>
-    .stApp { background-color: #f8f9fa; }
-    .main-header {
-        font-size: 1.6rem; font-weight: 700;
-        color: #1a1a2e; margin-bottom: 0.2rem;
-    }
-    .sub-header {
-        font-size: 0.85rem; color: #6c757d; margin-bottom: 1.2rem;
-    }
-    .regime-box {
-        border-radius: 10px; padding: 16px 20px; margin-bottom: 8px;
-        border: 1px solid #dee2e6;
-    }
-    .regime-trending { background: #d4edda; border-color: #c3e6cb; }
-    .regime-ranging  { background: #fff3cd; border-color: #ffeeba; }
-    .signal-high   { color: #155724; font-weight: 700; }
-    .signal-medium { color: #856404; font-weight: 700; }
-    .signal-low    { color: #721c24; font-weight: 600; }
-    .signal-grey   { color: #868e96; }
-    .stDataFrame { font-size: 0.82rem; }
-    div[data-testid="metric-container"] {
-        background: white; border-radius: 8px;
-        border: 1px solid #dee2e6; padding: 8px 12px;
-    }
-    .section-title {
-        font-size: 1rem; font-weight: 600;
-        color: #343a40; margin: 0.8rem 0 0.4rem 0;
-        border-bottom: 2px solid #dee2e6; padding-bottom: 4px;
-    }
-    .liq-panel {
-        background: white; border-radius: 10px;
-        padding: 16px; border: 1px solid #dee2e6;
-    }
-    .narrative-text {
-        font-size: 0.9rem; color: #343a40; line-height: 1.6;
-    }
-    .tag-bullish { background:#d4edda; color:#155724; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
-    .tag-bearish { background:#f8d7da; color:#721c24; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
-    .tag-neutral { background:#e2e3e5; color:#383d41; border-radius:4px; padding:2px 8px; font-size:0.78rem; }
-    .stButton>button {
-        background:#1a1a2e; color:white; border-radius:8px;
-        border:none; padding:8px 20px; font-weight:600;
-    }
-    .stButton>button:hover { background:#16213e; }
-    table.scanner-table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-    table.scanner-table th {
-        background:#f1f3f5; color:#343a40;
-        padding:8px 10px; text-align:left; border-bottom:2px solid #dee2e6;
-    }
-    table.scanner-table td {
-        padding:7px 10px; border-bottom:1px solid #f1f3f5; vertical-align:top;
-    }
-    table.scanner-table tr:hover td { background:#f8f9fa; }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+  html, body, [class*="css"] { font-family: 'IBM Plex Sans', sans-serif; }
+  .stApp { background: #f5f5f0; }
+
+  .card { background:#fff; border-radius:12px; border:1px solid #e4e4e0; padding:16px 18px; margin-bottom:14px; }
+  .card-title { font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:#888; margin-bottom:10px; }
+
+  .state-sqz  { background:#fff7e6; border:1.5px solid #f5a623; border-radius:8px; padding:10px 14px; margin-bottom:8px; }
+  .state-cross { background:#e8f4ff; border:1.5px solid #2196f3; border-radius:8px; padding:10px 14px; margin-bottom:8px; }
+  .state-label { font-size:0.85rem; font-weight:700; font-family:'IBM Plex Mono',monospace; }
+  .state-meta  { font-size:0.72rem; color:#666; margin-top:3px; }
+
+  .sig-reversal  { background:#fff0f0; border-left:4px solid #e53935; border-radius:0 10px 10px 0; padding:14px 16px; margin-bottom:10px; }
+  .sig-expansion { background:#f0fff4; border-left:4px solid #1db954; border-radius:0 10px 10px 0; padding:14px 16px; margin-bottom:10px; }
+  .sig-pullback  { background:#f0f4ff; border-left:4px solid #2196f3; border-radius:0 10px 10px 0; padding:14px 16px; margin-bottom:10px; }
+
+  .sig-type  { font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:#888; margin-bottom:4px; }
+  .sig-title { font-size:1rem; font-weight:700; color:#111; margin-bottom:4px; }
+  .sig-long  { color:#1db954; }
+  .sig-short { color:#e53935; }
+  .sig-body  { font-size:0.78rem; color:#555; margin-top:6px; line-height:1.6; }
+
+  .badge-high   { background:#1db954; color:#fff; border-radius:5px; padding:2px 9px; font-size:0.7rem; font-weight:700; }
+  .badge-medium { background:#f5a623; color:#fff; border-radius:5px; padding:2px 9px; font-size:0.7rem; font-weight:700; }
+  .badge-low    { background:#e53935; color:#fff; border-radius:5px; padding:2px 9px; font-size:0.7rem; font-weight:700; }
+
+  .tag { display:inline-block; border-radius:4px; padding:2px 8px; font-size:0.67rem; font-weight:600; margin-right:4px; }
+  .tag-bull { background:#e8f8ef; color:#1db954; }
+  .tag-bear { background:#fde8e8; color:#e53935; }
+  .tag-neut { background:#ececec; color:#666; }
+  .tag-sqz  { background:#fff7e6; color:#f5a623; }
+  .tag-cross { background:#e8f4ff; color:#2196f3; }
+
+  .exch-badge      { background:#1db954; color:#000; font-weight:700; font-size:0.68rem; padding:2px 9px; border-radius:20px; font-family:'IBM Plex Mono',monospace; }
+  .exch-badge-fail { background:#e53935; color:#fff; font-weight:700; font-size:0.68rem; padding:2px 9px; border-radius:20px; }
+
+  .log-row { font-family:'IBM Plex Mono',monospace; font-size:0.67rem; color:#555; padding:4px 0; border-bottom:1px solid #f0f0ec; }
+  .log-row:last-child { border-bottom:none; }
+  .log-sig  { color:#1db954; font-weight:600; }
+  .log-comp { color:#f5a623; font-weight:600; }
+
+  .regime-up   { background:#e8f8ef; border:1.5px solid #1db954; border-radius:8px; padding:10px 14px; }
+  .regime-down { background:#fde8e8; border:1.5px solid #e53935; border-radius:8px; padding:10px 14px; }
+  .regime-range{ background:#fff7e6; border:1.5px solid #f5a623; border-radius:8px; padding:10px 14px; }
+  .regime-label{ font-weight:700; font-size:0.82rem; }
+  .regime-meta { font-size:0.7rem; color:#666; margin-top:3px; font-family:'IBM Plex Mono',monospace; }
+
+  .stButton > button { background:#111; color:#fff; border:none; border-radius:8px; padding:9px 22px; font-weight:600; font-size:0.82rem; }
+  .stButton > button:hover { background:#333; }
+  div[data-testid="metric-container"] { background:white; border-radius:8px; border:1px solid #e4e4e0; padding:8px 12px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
-COMPRESSION_THRESHOLD = 0.004   # 0.4%
-EXPANSION_BODY_RATIO  = 1.5     # 150% of avg body
-EXPANSION_WICK_RATIO  = 0.60    # 60% of range
-TREND_SMA_SEP         = 0.012   # 1.2% for reversion
-REGIME_SMA_SEP        = 0.01    # 1.0% for trending label
-FIREWALL_DIST         = 0.01    # 1% swing obstacle
-LIQUIDITY_HOLE        = 0.015   # 1.5% for room
-MAX_SIGNAL_AGE        = 2       # candles before greying out
 
-HEADERS = {"User-Agent": "Mozilla/5.0 CryptoScanner/1.0"}
-TIMEOUT  = 8
+COMPRESSION_THRESHOLD = 0.002   # 0.2% nearness for SQZ/CROSSOVER
+EXPANSION_BODY_RATIO  = 1.5     # elephant: body ≥ 150% avg body
+EXPANSION_WICK_RATIO  = 0.60    # tail: wick ≥ 60% of range
+TREND_SMA_SEP         = 0.012   # 1.2% separation for reversal setups
+REGIME_SMA_SEP        = 0.010   # 1.0% for regime trending
+FIREWALL_DIST         = 0.010   # 1.0% obstacle detection
+LIQUIDITY_HOLE_LARGE  = 0.025   # 2.5% = large room
+LIQUIDITY_HOLE_MOD    = 0.015   # 1.5% = moderate room
+MAX_SIGNAL_AGE        = 2
+TIMEOUT = 8
+HEADERS = {"User-Agent": "Mozilla/5.0 EdgeScanner/3.0"}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DATA FETCHING HELPERS
+# SCAN LOG
 # ─────────────────────────────────────────────────────────────────────────────
 
-def safe_get(url: str, params: dict = None) -> Optional[dict]:
+if "scan_log" not in st.session_state:
+    st.session_state.scan_log = []
+
+
+def add_log(exchange: str, pair: str, comp_state: str, signal: str, conviction: str):
+    ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    st.session_state.scan_log.insert(0, {
+        "time": ts, "exchange": exchange, "pair": pair,
+        "comp": comp_state, "signal": signal, "conviction": conviction,
+    })
+    st.session_state.scan_log = st.session_state.scan_log[:20]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PART 0 — MULTI-EXCHANGE DATA FETCHER WITH FAILOVER
+# ─────────────────────────────────────────────────────────────────────────────
+
+def safe_get(url: str, params: dict = None) -> Optional[object]:
     try:
         r = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
         r.raise_for_status()
@@ -155,25 +135,27 @@ def safe_get(url: str, params: dict = None) -> Optional[dict]:
         return None
 
 
-def klines_to_df(raw: list, source: str = "binance") -> pd.DataFrame:
-    """Convert raw kline lists to OHLCV DataFrame."""
+def _norm(raw, source: str) -> pd.DataFrame:
+    """Normalize any exchange kline format to standard OHLCV dataframe."""
     if not raw:
         return pd.DataFrame()
     try:
-        if source == "binance":
-            cols = ["ts","open","high","low","close","vol",
-                    "close_ts","qvol","trades","tbbv","tbqv","ignore"]
-            df = pd.DataFrame(raw, columns=cols[:len(raw[0])])
+        if source in ("binance", "mexc"):
+            df = pd.DataFrame(raw, columns=["ts","open","high","low","close","vol",
+                                             "ct","qv","n","tbbv","tbqv","ig"][:len(raw[0])])
         elif source == "okx":
-            cols = ["ts","open","high","low","close","vol","volCcy","volCcyQuote","confirm"]
-            df = pd.DataFrame(raw, columns=cols[:len(raw[0])])
+            df = pd.DataFrame(raw, columns=["ts","open","high","low","close","vol",
+                                             "volCcy","volCcyQuote","confirm"][:len(raw[0])])
+            df = df.iloc[::-1].reset_index(drop=True)
         elif source == "gate":
             df = pd.DataFrame(raw)
             df = df.rename(columns={"t":"ts","o":"open","h":"high","l":"low","c":"close","v":"vol"})
-        elif source == "mexc":
-            cols = ["ts","open","high","low","close","vol","close_ts",
-                    "qvol","trades","tbbv","tbqv","ignore"]
-            df = pd.DataFrame(raw, columns=cols[:len(raw[0])])
+        elif source == "bingx":
+            df = pd.DataFrame(raw)
+            df = df.rename(columns={"t":"ts","o":"open","h":"high","l":"low","c":"close","v":"vol"})
+        elif source == "weex":
+            df = pd.DataFrame(raw)
+            df = df.rename(columns={"time":"ts","open":"open","high":"high","low":"low","close":"close","vol":"vol"})
         else:
             return pd.DataFrame()
 
@@ -182,287 +164,523 @@ def klines_to_df(raw: list, source: str = "binance") -> pd.DataFrame:
                 df[c] = pd.to_numeric(df[c], errors="coerce")
         if "ts" in df.columns:
             df["ts"] = pd.to_numeric(df["ts"], errors="coerce")
-            if df["ts"].max() > 1e12:
+            if df["ts"].dropna().max() > 1e12:
                 df["ts"] = df["ts"] / 1000
+
         df = df.dropna(subset=["open","high","low","close"]).sort_values("ts").reset_index(drop=True)
-        return df
+        cols = [c for c in ["ts","open","high","low","close","vol"] if c in df.columns]
+        return df[cols]
     except Exception:
         return pd.DataFrame()
 
 
-# ─── OKX ────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=60)
+def get_btc_data_with_failover(interval: str = "1h", limit: int = 60) -> tuple:
+    """
+    Try Binance → OKX → MEXC → Gate.io → BingX sequentially.
+    Returns (DataFrame, active_exchange_name).
+    Interval is in standard format: 1m, 3m, 5m, 15m, 1h, 4h.
+    """
+    iv_binance = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","1h":"1h","4h":"4h"}
+    iv_okx     = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","1h":"1H","4h":"4H"}
+    iv_mexc    = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","1h":"60m","4h":"4h"}
+    iv_gate    = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","1h":"1h","4h":"4h"}
+    iv_bingx   = {"1m":"1m","3m":"3m","5m":"5m","15m":"15m","1h":"1h","4h":"4h"}
+
+    attempts = [
+        ("Binance", lambda: _norm(
+            safe_get("https://api.binance.com/api/v3/klines",
+                     {"symbol":"BTCUSDT","interval":iv_binance.get(interval,interval),"limit":limit}),
+            "binance")),
+        ("OKX", lambda: _norm(
+            (safe_get("https://www.okx.com/api/v5/market/candles",
+                      {"instId":"BTC-USDT-SWAP","bar":iv_okx.get(interval,interval),"limit":limit}) or {}).get("data"),
+            "okx")),
+        ("MEXC", lambda: _norm(
+            safe_get("https://api.mexc.com/api/v3/klines",
+                     {"symbol":"BTCUSDT","interval":iv_mexc.get(interval,interval),"limit":limit}),
+            "mexc")),
+        ("Gate.io", lambda: _norm(
+            safe_get("https://api.gateio.ws/api/v4/futures/usdt/candlesticks",
+                     {"contract":"BTC_USDT","interval":iv_gate.get(interval,interval),"limit":limit}),
+            "gate")),
+        ("BingX", lambda: _norm(
+            (safe_get("https://open-api.bingx.com/openApi/swap/v2/quote/klines",
+                      {"symbol":"BTC-USDT","interval":iv_bingx.get(interval,interval),"limit":limit}) or {}).get("data"),
+            "bingx")),
+    ]
+
+    for name, fetch_fn in attempts:
+        try:
+            df = fetch_fn()
+            if df is not None and not df.empty and len(df) >= 10:
+                return df, name
+        except Exception:
+            continue
+    return pd.DataFrame(), "None"
+
+
+# ── Per-pair kline fetchers ──────────────────────────────────────────────────
 
 @st.cache_data(ttl=60)
-def okx_top_pairs(n: int = 40) -> list:
-    url = "https://www.okx.com/api/v5/public/instruments"
-    data = safe_get(url, {"instType": "SWAP"})
-    if not data or "data" not in data:
+def okx_klines(inst_id: str, bar: str, limit: int = 130) -> pd.DataFrame:
+    d = safe_get("https://www.okx.com/api/v5/market/candles",
+                 {"instId":inst_id,"bar":bar,"limit":limit})
+    return _norm((d or {}).get("data"), "okx")
+
+
+@st.cache_data(ttl=60)
+def gate_klines(contract: str, interval: str, limit: int = 130) -> pd.DataFrame:
+    d = safe_get("https://api.gateio.ws/api/v4/futures/usdt/candlesticks",
+                 {"contract":contract,"interval":interval,"limit":limit})
+    return _norm(d if isinstance(d, list) else None, "gate")
+
+
+@st.cache_data(ttl=60)
+def mexc_klines(symbol: str, interval: str, limit: int = 130) -> pd.DataFrame:
+    d = safe_get("https://api.mexc.com/api/v3/klines",
+                 {"symbol":symbol,"interval":interval,"limit":limit})
+    return _norm(d if isinstance(d, list) else None, "mexc")
+
+
+@st.cache_data(ttl=60)
+def okx_top_pairs(n: int = 35) -> list:
+    tickers = safe_get("https://www.okx.com/api/v5/market/tickers", {"instType":"SWAP"})
+    if not tickers or "data" not in tickers:
+        return ["BTC-USDT-SWAP"]
+    pairs = sorted(
+        [(d["instId"], float(d.get("volCcy24h", 0)))
+         for d in tickers["data"] if d.get("instId","").endswith("-USDT-SWAP")],
+        key=lambda x: x[1], reverse=True
+    )
+    result = [p[0] for p in pairs]
+    if "BTC-USDT-SWAP" not in result[:n]:
+        result = ["BTC-USDT-SWAP"] + [p for p in result if p != "BTC-USDT-SWAP"]
+    return result[:n]
+
+
+@st.cache_data(ttl=60)
+def gate_top_pairs(n: int = 25) -> list:
+    d = safe_get("https://api.gateio.ws/api/v4/futures/usdt/contracts")
+    if not isinstance(d, list):
         return []
-    pairs = [d["instId"] for d in data["data"] if d.get("instId","").endswith("-USDT-SWAP")]
-    # Get 24h volume
-    ticker_url = "https://www.okx.com/api/v5/market/tickers"
-    t_data = safe_get(ticker_url, {"instType": "SWAP"})
-    if not t_data or "data" not in t_data:
-        return pairs[:n]
-    vols = {d["instId"]: float(d.get("volCcy24h", 0)) for d in t_data["data"]}
-    pairs_sorted = sorted(pairs, key=lambda x: vols.get(x, 0), reverse=True)
-    # Ensure BTC included
-    btc = "BTC-USDT-SWAP"
-    if btc not in pairs_sorted[:n]:
-        pairs_sorted = [btc] + [p for p in pairs_sorted if p != btc]
-    return pairs_sorted[:n]
+    pairs = sorted(
+        [(x["name"], float(x.get("volume_24h_base", 0)))
+         for x in d if "USDT" in x.get("name","")],
+        key=lambda x: x[1], reverse=True
+    )
+    result = [p[0] for p in pairs]
+    if "BTC_USDT" not in result[:n]:
+        result = ["BTC_USDT"] + [p for p in result if p != "BTC_USDT"]
+    return result[:n]
 
 
 @st.cache_data(ttl=60)
-def okx_klines(inst_id: str, bar: str, limit: int = 120) -> pd.DataFrame:
-    url = "https://www.okx.com/api/v5/market/candles"
-    data = safe_get(url, {"instId": inst_id, "bar": bar, "limit": limit})
-    if not data or "data" not in data:
-        return pd.DataFrame()
-    raw = data["data"]
-    raw.reverse()  # OKX returns newest first
-    return klines_to_df(raw, "okx")
-
-
-# ─── Gate.io ────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=60)
-def gate_top_pairs(n: int = 40) -> list:
-    url = "https://api.gateio.ws/api/v4/futures/usdt/contracts"
-    data = safe_get(url)
-    if not isinstance(data, list):
+def mexc_top_pairs(n: int = 20) -> list:
+    d = safe_get("https://api.mexc.com/api/v3/ticker/24hr")
+    if not isinstance(d, list):
         return []
-    pairs = [(d["name"], float(d.get("volume_24h_base", 0))) for d in data if "USDT" in d.get("name","")]
-    pairs_sorted = [p[0] for p in sorted(pairs, key=lambda x: x[1], reverse=True)]
-    btc = "BTC_USDT"
-    if btc not in pairs_sorted[:n]:
-        pairs_sorted = [btc] + [p for p in pairs_sorted if p != btc]
-    return pairs_sorted[:n]
+    pairs = sorted(
+        [(x["symbol"], float(x.get("quoteVolume", 0)))
+         for x in d if str(x.get("symbol","")).endswith("USDT")],
+        key=lambda x: x[1], reverse=True
+    )
+    result = [p[0] for p in pairs]
+    if "BTCUSDT" not in result[:n]:
+        result = ["BTCUSDT"] + [p for p in result if p != "BTCUSDT"]
+    return result[:n]
 
 
-@st.cache_data(ttl=60)
-def gate_klines(contract: str, interval: str, limit: int = 120) -> pd.DataFrame:
-    url = "https://api.gateio.ws/api/v4/futures/usdt/candlesticks"
-    data = safe_get(url, {"contract": contract, "interval": interval, "limit": limit})
-    if not isinstance(data, list):
-        return pd.DataFrame()
-    df = klines_to_df(data, "gate")
-    return df
-
-
-# ─── MEXC ────────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=60)
-def mexc_top_pairs(n: int = 40) -> list:
-    url = "https://contract.mexc.com/api/v1/contract/ticker"
-    data = safe_get(url)
-    if not data or "data" not in data:
-        return []
-    pairs = [(d["symbol"], float(d.get("amount24", 0)))
-             for d in data["data"] if "_USDT" in d.get("symbol","")]
-    pairs_sorted = [p[0] for p in sorted(pairs, key=lambda x: x[1], reverse=True)]
-    btc = "BTC_USDT"
-    if btc not in pairs_sorted[:n]:
-        pairs_sorted = [btc] + [p for p in pairs_sorted if p != btc]
-    return pairs_sorted[:n]
-
-
-@st.cache_data(ttl=60)
-def mexc_klines(symbol: str, interval: str, limit: int = 120) -> pd.DataFrame:
-    url = "https://contract.mexc.com/api/v1/contract/kline"
-    data = safe_get(url, {"symbol": symbol, "interval": interval, "limit": limit})
-    if not data or "data" not in data:
-        return pd.DataFrame()
-    d = data["data"]
+def get_tf_klines(pair: str, source: str, tf: str, limit: int = 130) -> pd.DataFrame:
     try:
-        rows = []
-        times = d.get("time", [])
-        opens  = d.get("open",  [])
-        highs  = d.get("high",  [])
-        lows   = d.get("low",   [])
-        closes = d.get("close", [])
-        vols   = d.get("vol",   [])
-        for i in range(len(times)):
-            rows.append({
-                "ts":    times[i],
-                "open":  float(opens[i])  if i < len(opens)  else np.nan,
-                "high":  float(highs[i])  if i < len(highs)  else np.nan,
-                "low":   float(lows[i])   if i < len(lows)   else np.nan,
-                "close": float(closes[i]) if i < len(closes) else np.nan,
-                "vol":   float(vols[i])   if i < len(vols)   else np.nan,
-            })
-        df = pd.DataFrame(rows).sort_values("ts").reset_index(drop=True)
-        return df
+        if source == "okx":
+            return okx_klines(pair, tf, limit)
+        if source == "gate":
+            return gate_klines(pair, tf, limit)
+        if source == "mexc":
+            return mexc_klines(pair, tf, limit)
     except Exception:
-        return pd.DataFrame()
+        pass
+    return pd.DataFrame()
 
 
-# ─── Binance (BTC Liquidity Engine) ─────────────────────────────────────────
-
-@st.cache_data(ttl=60)
-def binance_klines(symbol: str, interval: str, limit: int = 60) -> pd.DataFrame:
-    url = "https://api.binance.com/api/v3/klines"
-    data = safe_get(url, {"symbol": symbol, "interval": interval, "limit": limit})
-    if not isinstance(data, list):
-        return pd.DataFrame()
-    return klines_to_df(data, "binance")
+def pair_display(raw: str, source: str) -> str:
+    raw = raw.upper()
+    if source == "okx":
+        return raw.replace("-SWAP","").replace("-","/")
+    return raw.replace("_","/")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# INDICATOR ENGINE
+# INDICATORS
 # ─────────────────────────────────────────────────────────────────────────────
-
-def calc_sma(series: pd.Series, period: int) -> pd.Series:
-    return series.rolling(period, min_periods=period).mean()
-
-
-def calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain  = delta.clip(lower=0)
-    loss  = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
-    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
-    rs  = avg_gain / avg_loss.replace(0, np.nan)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or len(df) < 20:
         return df
     df = df.copy()
-    df["sma20"]  = calc_sma(df["close"], 20)
-    df["sma100"] = calc_sma(df["close"], 100)
-    df["rsi14"]  = calc_rsi(df["close"], 14)
-    df["body"]   = (df["close"] - df["open"]).abs()
-    df["range"]  = df["high"] - df["low"]
+    df["sma20"]    = df["close"].rolling(20, min_periods=15).mean()
+    df["sma100"]   = df["close"].rolling(100, min_periods=20).mean()
+    delta          = df["close"].diff()
+    gain           = delta.clip(lower=0).ewm(com=13, min_periods=14).mean()
+    loss           = (-delta).clip(lower=0).ewm(com=13, min_periods=14).mean()
+    rs             = gain / loss.replace(0, np.nan)
+    df["rsi14"]    = 100 - (100 / (1 + rs))
+    df["body"]     = (df["close"] - df["open"]).abs()
+    df["range"]    = df["high"] - df["low"]
     df["avg_body"] = df["body"].rolling(10, min_periods=5).mean()
     return df
 
 
-def get_swing_levels(df: pd.DataFrame, lookback: int = 20) -> tuple:
-    """Return recent swing highs and lows from last `lookback` candles."""
+def get_swing_levels(df: pd.DataFrame, lookback: int = 40) -> tuple:
     if df.empty or len(df) < 5:
         return [], []
     sub = df.tail(lookback)
+    ha, la = sub["high"].values, sub["low"].values
     highs, lows = [], []
-    closes = sub["close"].values
-    highs_arr = sub["high"].values
-    lows_arr  = sub["low"].values
     for i in range(2, len(sub) - 2):
-        if highs_arr[i] == max(highs_arr[i-2:i+3]):
-            highs.append(highs_arr[i])
-        if lows_arr[i] == min(lows_arr[i-2:i+3]):
-            lows.append(lows_arr[i])
+        if ha[i] == max(ha[i-2:i+3]):
+            highs.append(ha[i])
+        if la[i] == min(la[i-2:i+3]):
+            lows.append(la[i])
     return sorted(highs, reverse=True), sorted(lows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORE EDGE ENGINE — Signal Detection
+# PART 1 — COMPRESSION ENGINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def detect_compression(df: pd.DataFrame) -> bool:
-    """Price and SMA20/100 all within 0.4% of each other."""
-    if df.empty or "sma20" not in df.columns or "sma100" not in df.columns:
+def _in_compression(row) -> bool:
+    p, s20, s100 = row.get("close", np.nan), row.get("sma20", np.nan), row.get("sma100", np.nan)
+    if any(pd.isna(x) for x in [p, s20, s100]) or min(p, s20, s100) == 0:
         return False
-    last = df.iloc[-1]
-    price = last["close"]
-    s20   = last.get("sma20",  np.nan)
-    s100  = last.get("sma100", np.nan)
-    if pd.isna(s20) or pd.isna(s100):
-        return False
-    spread = max(price, s20, s100) / min(price, s20, s100) - 1
+    spread = (max(p, s20, s100) - min(p, s20, s100)) / p
     return spread <= COMPRESSION_THRESHOLD
 
 
-def detect_expansion(df: pd.DataFrame) -> Optional[str]:
+def detect_compression_state(df: pd.DataFrame) -> dict:
     """
-    Returns 'long', 'short', or None.
-    Expansion: first candle leaving compression, confirmed by elephant/tail candle.
+    Always detect and report.
+    Returns: { state: 'SQZ' | 'CROSSOVER' | 'NONE', spread: float, detail: str }
     """
-    if df.empty or len(df) < 3 or "sma20" not in df.columns:
-        return None
-    # Check if previous candle was in compression, current breaks out
-    prev2 = df.iloc[-3]
-    prev  = df.iloc[-2]
-    curr  = df.iloc[-1]
+    if df.empty or "sma20" not in df.columns or len(df) < 2:
+        return {"state":"NONE","spread":None,"detail":""}
 
-    def in_comp(row):
-        p, s20, s100 = row["close"], row.get("sma20", np.nan), row.get("sma100", np.nan)
-        if pd.isna(s20) or pd.isna(s100): return False
-        spread = max(p, s20, s100) / min(p, s20, s100) - 1
-        return spread <= COMPRESSION_THRESHOLD
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    was_comp = in_comp(prev2) or in_comp(prev)
-    if not was_comp:
-        return None
+    if not _in_compression(last):
+        return {"state":"NONE","spread":None,"detail":""}
 
-    # Check elephant or tail candle on current or previous
-    def is_elephant(row):
-        avg_b = row.get("avg_body", np.nan)
-        if pd.isna(avg_b) or avg_b == 0: return False, None
-        body  = row.get("body", 0)
-        rng   = row.get("range", 0)
-        wick  = rng - body
-        if body >= EXPANSION_BODY_RATIO * avg_b:
-            return True, "Long" if row["close"] > row["open"] else "Short"
-        if rng > 0 and wick >= EXPANSION_WICK_RATIO * rng:
-            upper_wick = row["high"] - max(row["open"], row["close"])
-            lower_wick = min(row["open"], row["close"]) - row["low"]
-            if lower_wick > upper_wick:
-                return True, "Long"
-            else:
-                return True, "Short"
-        return False, None
+    s20  = last.get("sma20",  np.nan)
+    s100 = last.get("sma100", np.nan)
+    p    = last["close"]
+    spread = (max(p, s20, s100) - min(p, s20, s100)) / p
 
-    el_curr, dir_curr = is_elephant(curr)
-    el_prev, dir_prev = is_elephant(prev)
+    # CROSSOVER: SMA20 crossed SMA100 between prev and last
+    ps20  = prev.get("sma20",  np.nan)
+    ps100 = prev.get("sma100", np.nan)
+    is_cross = False
+    if not any(pd.isna(x) for x in [ps20, ps100]):
+        was_above = ps20 > ps100
+        now_above = s20  > s100
+        is_cross  = was_above != now_above
 
-    if el_curr and dir_curr:
-        return dir_curr.lower()
-    if el_prev and dir_prev:
-        return dir_prev.lower()
-    return None
+    state  = "CROSSOVER" if is_cross else "SQZ"
+    detail = f"P:{p:.4f} SMA20:{s20:.4f} SMA100:{s100:.4f} Spread:{spread*100:.3f}%"
+    return {"state": state, "spread": round(spread * 100, 3), "detail": detail}
 
 
-def detect_pullback(df: pd.DataFrame) -> Optional[str]:
-    """First pullback to SMA20 with confirmation."""
+# ─────────────────────────────────────────────────────────────────────────────
+# PART 2 — EXPANSION ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _classify_candle(row) -> tuple:
+    """Returns (candle_type, direction) or (None, None)."""
+    avg_b = row.get("avg_body", np.nan)
+    body  = row.get("body", 0)
+    rng   = row.get("range", 0)
+    if pd.isna(avg_b) or avg_b == 0 or rng == 0:
+        return None, None
+    # Elephant — large body
+    if body >= EXPANSION_BODY_RATIO * avg_b:
+        return "elephant", ("long" if row["close"] > row["open"] else "short")
+    # Tail — large wick
+    wick = rng - body
+    if wick >= EXPANSION_WICK_RATIO * rng:
+        upper = row["high"] - max(row["open"], row["close"])
+        lower = min(row["open"], row["close"]) - row["low"]
+        return "tail", ("long" if lower > upper else "short")
+    return None, None
+
+
+def detect_expansion(df: pd.DataFrame) -> Optional[dict]:
+    """
+    Forward-only expansion detection from compression.
+
+    Rules (from prompt):
+    1. Find most recent compression candle in last 6 candles
+    2. First candle AFTER compression = breakout candle (monitored)
+    3. ENTRY = 1st or 2nd candle after breakout that is elephant or tail
+    4. If neither qualifies → no signal
+
+    Returns: { direction, candle_type, signal_age } or None
+    """
     if df.empty or len(df) < 5 or "sma20" not in df.columns:
         return None
-    last  = df.iloc[-1]
-    prev  = df.iloc[-2]
-    s20_last = last.get("sma20",  np.nan)
-    s20_prev = prev.get("sma20",  np.nan)
-    if pd.isna(s20_last) or pd.isna(s20_prev):
+
+    sub = df.tail(8).reset_index(drop=True)
+
+    # Find most recent compression candle
+    comp_idx = None
+    for i in range(len(sub) - 1, -1, -1):
+        if _in_compression(sub.iloc[i]):
+            comp_idx = i
+            break
+
+    if comp_idx is None:
         return None
 
-    # Price touched SMA20 and bounced
-    low_touched = prev["low"] <= s20_prev * 1.005 and prev["close"] > s20_prev
-    high_touched = prev["high"] >= s20_prev * 0.995 and prev["close"] < s20_prev
+    # Candles after compression
+    post = sub.iloc[comp_idx + 1:].reset_index(drop=True)
+    if len(post) == 0:
+        return None
 
-    # Confirmation candle
-    avg_b = last.get("avg_body", np.nan)
-    body  = last.get("body", 0)
-    is_conf = (not pd.isna(avg_b) and avg_b > 0 and body >= avg_b * 0.8)
-
-    if low_touched and is_conf and last["close"] > s20_last:
-        return "long"
-    if high_touched and is_conf and last["close"] < s20_last:
-        return "short"
+    # Check 1st and 2nd candle after compression
+    for i in range(min(2, len(post))):
+        ctype, direction = _classify_candle(post.iloc[i])
+        if ctype and direction:
+            return {
+                "direction":   direction,
+                "candle_type": ctype,
+                "signal_age":  i,  # 0 = current candle, 1 = one candle ago
+            }
     return None
 
 
-def detect_reversion(df: pd.DataFrame) -> Optional[str]:
+# ─────────────────────────────────────────────────────────────────────────────
+# PART 3 — LIQUIDITY ENGINE (1H)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def detect_3bar_pivots(df: pd.DataFrame) -> tuple:
+    if df.empty or len(df) < 3:
+        return [], []
+    ha, la = df["high"].values, df["low"].values
+    bsl, ssl = [], []
+    for i in range(1, len(df) - 1):
+        if ha[i] > ha[i-1] and ha[i] > ha[i+1]:
+            bsl.append({"price": ha[i], "idx": i})
+        if la[i] < la[i-1] and la[i] < la[i+1]:
+            ssl.append({"price": la[i], "idx": i})
+    return bsl, ssl
+
+
+def get_liquidity_sweep(df: pd.DataFrame) -> Optional[dict]:
     """
-    Reversion to SMA100 allowed if:
-    - SMA20-SMA100 separation >= 1.2%
-    - No SMA crossings in last 15 candles
+    BEAR SWEEP: high breaks BSL → closes below
+    BULL SWEEP: low breaks SSL → closes above
     """
-    if df.empty or len(df) < 20 or "sma20" not in df.columns or "sma100" not in df.columns:
+    if df.empty or len(df) < 6:
+        return None
+
+    bsl, ssl = detect_3bar_pivots(df.iloc[:-1])
+    last5 = df.tail(5)
+
+    for idx in range(len(last5) - 1, -1, -1):
+        row = last5.iloc[idx]
+        if bsl:
+            top = max(bsl, key=lambda x: x["price"])
+            if row["high"] > top["price"] and row["close"] < top["price"]:
+                wick_pct = (row["high"] - top["price"]) / top["price"] * 100
+                return {
+                    "type": "BEAR SWEEP", "level": round(top["price"], 2),
+                    "wick_pct": round(wick_pct, 3),
+                    "bars_ago": len(last5) - 1 - idx,
+                    "confirmed": True,
+                }
+        if ssl:
+            bot = min(ssl, key=lambda x: x["price"])
+            if row["low"] < bot["price"] and row["close"] > bot["price"]:
+                wick_pct = (bot["price"] - row["low"]) / bot["price"] * 100
+                return {
+                    "type": "BULL SWEEP", "level": round(bot["price"], 2),
+                    "wick_pct": round(wick_pct, 3),
+                    "bars_ago": len(last5) - 1 - idx,
+                    "confirmed": True,
+                }
+    return None
+
+
+def get_liquidity_levels(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {"bsl": [], "ssl": [], "price": None}
+    bsl, ssl = detect_3bar_pivots(df)
+    price    = df.iloc[-1]["close"]
+    above    = sorted([x["price"] for x in bsl if x["price"] > price])[:3]
+    below    = sorted([x["price"] for x in ssl if x["price"] < price], reverse=True)[:3]
+    return {
+        "bsl":   [round(p, 2) for p in above],
+        "ssl":   [round(p, 2) for p in below],
+        "price": round(price, 2),
+    }
+
+
+def get_1h_bias(df: pd.DataFrame) -> str:
+    if df.empty or "sma20" not in df.columns:
+        return "neutral"
+    last = df.iloc[-1]
+    s20, s100 = last.get("sma20", np.nan), last.get("sma100", np.nan)
+    if pd.isna(s20) or pd.isna(s100):
+        return "neutral"
+    if s20 > s100 * 1.002:
+        return "bullish"
+    if s20 < s100 * 0.998:
+        return "bearish"
+    return "neutral"
+
+
+def get_impulse_1h(df: pd.DataFrame) -> Optional[dict]:
+    if df.empty or len(df) < 5:
+        return None
+    for i in range(len(df) - 1, max(len(df) - 7, -1), -1):
+        row = df.iloc[i]
+        avg_b = row.get("avg_body", np.nan)
+        body  = row.get("body", 0)
+        if not pd.isna(avg_b) and avg_b > 0 and body >= EXPANSION_BODY_RATIO * avg_b:
+            return {
+                "direction": "bullish" if row["close"] > row["open"] else "bearish",
+                "pct":       round(body / row["close"] * 100, 2),
+                "bars_ago":  len(df) - 1 - i,
+            }
+    return None
+
+
+def get_pullback_zone(df: pd.DataFrame) -> Optional[dict]:
+    if df.empty or "sma20" not in df.columns:
         return None
     last = df.iloc[-1]
-    s20   = last.get("sma20",  np.nan)
-    s100  = last.get("sma100", np.nan)
+    s20  = last.get("sma20", np.nan)
+    if pd.isna(s20):
+        return None
+    price = last["close"]
+    lower = round(s20 * 0.9962, 2)
+    upper = round(s20 * 1.0038, 2)
+    return {
+        "lower": lower, "upper": upper,
+        "sma20": round(s20, 2),
+        "in_zone": lower <= price <= upper,
+    }
+
+
+@st.cache_data(ttl=60)
+def build_liquidity_panel() -> dict:
+    df_raw, active = get_btc_data_with_failover("1h", 100)
+    if df_raw.empty:
+        return {"error": "All exchange sources failed. Check network.", "active": "None"}
+    df      = add_indicators(df_raw)
+    sweep   = get_liquidity_sweep(df)
+    levels  = get_liquidity_levels(df)
+    bias    = get_1h_bias(df)
+    impulse = get_impulse_1h(df)
+    zone    = get_pullback_zone(df)
+    rsi_val = df.iloc[-1].get("rsi14", np.nan)
+    return {
+        "active": active, "bias": bias, "sweep": sweep,
+        "levels": levels, "impulse": impulse, "zone": zone,
+        "price":  levels.get("price"),
+        "rsi":    round(rsi_val, 1) if not pd.isna(rsi_val) else None,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PART 4 — POST-EXPANSION ENGINE
+# ─────────────────────────────────────────────────────────────────────────────
+
+def assess_trend_health(df: pd.DataFrame, direction: str) -> dict:
+    """5 metrics → HEALTHY / EXHAUSTED / MIXED."""
+    if df.empty or len(df) < 10:
+        return {"health": "UNKNOWN", "score": 0, "metrics": []}
+
+    metrics = []
+    last    = df.iloc[-1]
+    recent  = df.tail(5)
+
+    # 1. Structure continuation
+    if direction == "long":
+        metrics.append(("Structure", "healthy" if recent["high"].iloc[-1] > recent["high"].iloc[0] else "weak"))
+    else:
+        metrics.append(("Structure", "healthy" if recent["low"].iloc[-1] < recent["low"].iloc[0] else "weak"))
+
+    # 2. SMA20 respect
+    s20 = last.get("sma20", np.nan)
+    if not pd.isna(s20):
+        ok = last["close"] > s20 if direction == "long" else last["close"] < s20
+        metrics.append(("SMA20 respect", "healthy" if ok else "weak"))
+    else:
+        metrics.append(("SMA20 respect", "weak"))
+
+    # 3. Candle body quality
+    avg_r = recent["body"].mean()
+    avg_a = df["body"].tail(20).mean() if len(df) >= 20 else avg_r
+    metrics.append(("Body quality", "healthy" if avg_r >= avg_a * 0.8 else "weak"))
+
+    # 4. Momentum (RSI)
+    rsi = last.get("rsi14", np.nan)
+    if not pd.isna(rsi):
+        ok = 45 <= rsi <= 70 if direction == "long" else 30 <= rsi <= 55
+        metrics.append(("Momentum", "healthy" if ok else "weak"))
+    else:
+        metrics.append(("Momentum", "weak"))
+
+    # 5. Opposite liquidity swept
+    highs, lows = get_swing_levels(df, 20)
+    opp_swept = False
+    if direction == "long" and highs:
+        opp_swept = recent["high"].max() >= highs[0] * 0.998
+    elif direction == "short" and lows:
+        opp_swept = recent["low"].min() <= lows[0] * 1.002
+    metrics.append(("Opp. liq swept", "weak" if opp_swept else "healthy"))
+
+    healthy = sum(1 for _, s in metrics if s == "healthy")
+    weak    = sum(1 for _, s in metrics if s == "weak")
+    health  = "HEALTHY" if healthy >= 3 else "EXHAUSTED" if weak >= 3 else "MIXED"
+    return {"health": health, "score": healthy, "metrics": metrics}
+
+
+def detect_pullback(df: pd.DataFrame) -> Optional[dict]:
+    """Pullback to SMA20 with elephant/tail confirmation candle."""
+    if df.empty or len(df) < 10 or "sma20" not in df.columns:
+        return None
+    last, prev = df.iloc[-1], df.iloc[-2]
+    s20p = prev.get("sma20", np.nan)
+    s20l = last.get("sma20", np.nan)
+    if pd.isna(s20p) or pd.isna(s20l):
+        return None
+
+    low_touch  = prev["low"]  <= s20p * 1.005 and prev["close"] > s20p
+    high_touch = prev["high"] >= s20p * 0.995 and prev["close"] < s20p
+
+    ctype, cdir = _classify_candle(last)
+    if not ctype:
+        ctype, cdir = _classify_candle(prev)
+
+    if low_touch and ctype and last["close"] > s20l:
+        return {"direction": "long", "candle_type": ctype}
+    if high_touch and ctype and last["close"] < s20l:
+        return {"direction": "short", "candle_type": ctype}
+    return None
+
+
+def detect_reversal(df: pd.DataFrame) -> Optional[dict]:
+    """
+    Late reversal after exhausted trend.
+    Requires: SMA sep ≥1.2%, no crossing last 15 candles,
+              price near SMA100, elephant/tail confirmation.
+    """
+    if df.empty or len(df) < 20 or "sma20" not in df.columns:
+        return None
+    last = df.iloc[-1]
+    s20, s100 = last.get("sma20", np.nan), last.get("sma100", np.nan)
     if pd.isna(s20) or pd.isna(s100) or s100 == 0:
         return None
 
@@ -470,164 +688,119 @@ def detect_reversion(df: pd.DataFrame) -> Optional[str]:
     if sep < TREND_SMA_SEP:
         return None
 
-    # Check no crossings in last 15 candles
-    sub = df.tail(15)
+    # No crossing in last 15 candles
+    sub   = df.tail(15)
     above = (sub["sma20"] > sub["sma100"]).values
-    crossings = sum(1 for i in range(1, len(above)) if above[i] != above[i-1])
-    if crossings > 0:
+    if any(above[i] != above[i-1] for i in range(1, len(above))):
         return None
 
-    # Price approaching SMA100
-    price = last["close"]
-    dist_to_100 = abs(price - s100) / s100
-    if dist_to_100 > 0.006:  # within 0.6%
+    # Price near SMA100
+    if abs(last["close"] - s100) / s100 > 0.006:
+        return None
+
+    ctype, cdir = _classify_candle(last)
+    if not ctype:
+        ctype, cdir = _classify_candle(df.iloc[-2])
+    if not ctype:
         return None
 
     direction = "long" if s20 > s100 else "short"
-    return direction
-
-
-def check_firewalls(df: pd.DataFrame, direction: str) -> dict:
-    """Check swing level obstacles within 1%."""
-    price = df.iloc[-1]["close"] if not df.empty else None
-    if price is None:
-        return {"obstacle": "Unknown", "reason": "No data"}
-
-    swing_highs, swing_lows = get_swing_levels(df, lookback=30)
-
-    if direction == "long":
-        nearby = [h for h in swing_highs if 0 < (h - price) / price <= FIREWALL_DIST]
-        if nearby:
-            dist_pct = (nearby[0] - price) / price * 100
-            return {"obstacle": "Resistance nearby", "reason": f"Swing high {dist_pct:.1f}% above"}
-        return {"obstacle": "None", "reason": "No swing within 1%"}
-    else:
-        nearby = [l for l in swing_lows if 0 < (price - l) / price <= FIREWALL_DIST]
-        if nearby:
-            dist_pct = (price - nearby[0]) / price * 100
-            return {"obstacle": "Support nearby", "reason": f"Swing low {dist_pct:.1f}% below"}
-        return {"obstacle": "None", "reason": "No swing within 1%"}
-
-
-def check_liquidity_hole(df: pd.DataFrame, direction: str) -> dict:
-    """Next swing >= 1.5% away means room exists."""
-    price = df.iloc[-1]["close"] if not df.empty else None
-    if price is None:
-        return {"room": "Unknown", "reason": "No data"}
-
-    swing_highs, swing_lows = get_swing_levels(df, lookback=40)
-
-    if direction == "long":
-        ahead = [h for h in swing_highs if h > price]
-        if ahead:
-            dist = (ahead[0] - price) / price
-            if dist >= 0.025:
-                return {"room": "Large", "reason": f"Next swing {dist*100:.1f}% away"}
-            elif dist >= LIQUIDITY_HOLE:
-                return {"room": "Moderate", "reason": f"Next swing {dist*100:.1f}% away"}
-            else:
-                return {"room": "Limited", "reason": f"Next swing {dist*100:.1f}% away"}
-        return {"room": "Large", "reason": "No major swing overhead"}
-    else:
-        ahead = [l for l in swing_lows if l < price]
-        if ahead:
-            dist = (price - ahead[0]) / price
-            if dist >= 0.025:
-                return {"room": "Large", "reason": f"Next swing {dist*100:.1f}% away"}
-            elif dist >= LIQUIDITY_HOLE:
-                return {"room": "Moderate", "reason": f"Next swing {dist*100:.1f}% away"}
-            else:
-                return {"room": "Limited", "reason": f"Next swing {dist*100:.1f}% away"}
-        return {"room": "Large", "reason": "No major swing below"}
+    return {"direction": direction, "candle_type": ctype}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SCORING ENGINE
+# PART 5 — CONVICTION SCORING
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_signal(signal_age: int, setup_type: str, bias_15m: str,
-                 direction: str, room: str, obstacle: str, rsi: float,
-                 candle_quality: str) -> tuple:
-    """Returns (score, tier, conviction_parts)."""
-    score = 0
-    parts = []
+def score_signal(signal_age: int, candle_type: str, bias_15m: str,
+                 direction: str, room: str, obstacle: str, rsi: float) -> tuple:
+    score, parts = 0, []
 
-    # Freshness (25 pts)
+    # Freshness 25
     if signal_age == 0:
-        score += 25; parts.append("New breakout")
+        score += 25; parts.append("Fresh compression")
     elif signal_age == 1:
-        score += 15; parts.append("1 candle ago")
-    elif signal_age == 2:
-        score += 5;  parts.append("2 candles ago")
+        score += 12; parts.append("1 candle ago")
 
-    # Candle confirmation (20 pts)
-    if candle_quality == "elephant":
+    # Candle 20
+    if candle_type == "elephant":
         score += 20; parts.append("Strong elephant candle")
-    elif candle_quality == "tail":
+    elif candle_type == "tail":
         score += 15; parts.append("Rejection tail")
-    elif candle_quality == "ok":
-        score += 10; parts.append("Confirmed candle")
 
-    # 15m Bias alignment (15 pts)
+    # Bias 15
     if (direction == "long" and bias_15m == "bullish") or \
        (direction == "short" and bias_15m == "bearish"):
-        score += 15; parts.append("15m aligned")
+        score += 15; parts.append("Structure aligned")
     elif bias_15m == "neutral":
-        score += 5; parts.append("15m neutral")
-    else:
-        parts.append("15m against")
+        score += 5
 
-    # Liquidity hole (15 pts)
+    # Room 15
     if room == "Large":
-        score += 15; parts.append("Large room")
+        score += 15; parts.append("Large room ahead")
     elif room == "Moderate":
         score += 8;  parts.append("Moderate room")
     else:
         parts.append("Limited room")
 
-    # Firewall (15 pts)
+    # Obstacle 15
     if obstacle == "None":
-        score += 15; parts.append("No resistance")
+        score += 15; parts.append("No obstacles")
     else:
-        score += 0;  parts.append("Obstacle present")
+        parts.append("Obstacle present")
 
-    # RSI (10 pts)
-    if not pd.isna(rsi):
-        if direction == "long" and rsi < 40:
+    # RSI 10
+    if not (isinstance(rsi, str)) and not pd.isna(rsi):
+        if (direction == "long" and rsi < 40) or (direction == "short" and rsi > 60):
             score += 10; parts.append("RSI in fuel zone")
-        elif direction == "short" and rsi > 60:
-            score += 10; parts.append("RSI in fuel zone")
-        elif direction == "long" and 40 <= rsi <= 55:
-            score += 6;  parts.append("RSI neutral")
-        elif direction == "short" and 45 <= rsi <= 60:
-            score += 6;  parts.append("RSI neutral")
-        elif direction == "long" and rsi > 70:
-            score += 0;  parts.append("RSI overextended")
-        elif direction == "short" and rsi < 30:
-            score += 0;  parts.append("RSI overextended")
-        else:
-            score += 3;  parts.append("RSI moderate")
+        elif 40 <= rsi <= 60:
+            score += 5; parts.append("RSI neutral")
 
-    if score >= 75:
-        tier = "HIGH"
-    elif score >= 55:
-        tier = "MEDIUM"
-    else:
-        tier = "LOW"
-
+    tier = "HIGH" if score >= 75 else "MEDIUM" if score >= 55 else "LOW"
     return score, tier, parts
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 15m BIAS
-# ─────────────────────────────────────────────────────────────────────────────
+def check_room_obstacle(df: pd.DataFrame, direction: str) -> tuple:
+    if df.empty:
+        return "Unknown", "", "None", "No data"
+    price  = df.iloc[-1]["close"]
+    highs, lows = get_swing_levels(df, 40)
 
-def get_bias_15m(df_15m: pd.DataFrame) -> str:
-    if df_15m.empty or "sma20" not in df_15m.columns or "sma100" not in df_15m.columns:
+    if direction == "long":
+        ahead = [h for h in highs if h > price]
+        if ahead:
+            d = (ahead[0] - price) / price
+            room_d = f"Next swing {d*100:.1f}% away"
+            room   = "Large" if d >= LIQUIDITY_HOLE_LARGE else ("Moderate" if d >= LIQUIDITY_HOLE_MOD else "Limited")
+        else:
+            room, room_d = "Large", "No major swing overhead"
+        near = [h for h in highs if 0 < (h - price) / price <= FIREWALL_DIST]
+        if near:
+            d = (near[0] - price) / price * 100
+            return room, room_d, "Resistance", f"Swing high {d:.1f}% above"
+    else:
+        ahead = [l for l in lows if l < price]
+        if ahead:
+            d = (price - ahead[0]) / price
+            room_d = f"Next swing {d*100:.1f}% away"
+            room   = "Large" if d >= LIQUIDITY_HOLE_LARGE else ("Moderate" if d >= LIQUIDITY_HOLE_MOD else "Limited")
+        else:
+            room, room_d = "Large", "No major swing below"
+        near = [l for l in lows if 0 < (price - l) / price <= FIREWALL_DIST]
+        if near:
+            d = (price - near[0]) / price * 100
+            return room, room_d, "Support", f"Swing low {d:.1f}% below"
+
+    return room, room_d, "None", "No swing within 1%"
+
+
+def get_15m_bias(pair: str, source: str) -> str:
+    df = get_tf_klines(pair, source, "15m", 130)
+    if df.empty or len(df) < 20:
         return "neutral"
-    last = df_15m.iloc[-1]
-    s20  = last.get("sma20",  np.nan)
-    s100 = last.get("sma100", np.nan)
+    df = add_indicators(df)
+    last = df.iloc[-1]
+    s20, s100 = last.get("sma20", np.nan), last.get("sma100", np.nan)
     if pd.isna(s20) or pd.isna(s100):
         return "neutral"
     if s20 > s100 * 1.002:
@@ -638,395 +811,156 @@ def get_bias_15m(df_15m: pd.DataFrame) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CANDLE QUALITY CLASSIFIER
+# BTC REGIME
 # ─────────────────────────────────────────────────────────────────────────────
 
-def classify_candle(df: pd.DataFrame, idx: int = -1) -> str:
-    if df.empty or abs(idx) > len(df):
-        return "weak"
-    row = df.iloc[idx]
-    avg_b = row.get("avg_body", np.nan)
-    body  = row.get("body", 0)
-    rng   = row.get("range", 0)
-    if pd.isna(avg_b) or avg_b == 0 or rng == 0:
-        return "weak"
-    if body >= EXPANSION_BODY_RATIO * avg_b:
-        return "elephant"
-    wick = rng - body
-    if wick >= EXPANSION_WICK_RATIO * rng:
-        return "tail"
-    if body >= avg_b * 0.8:
-        return "ok"
-    return "weak"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# BTC REGIME ENGINE
-# ─────────────────────────────────────────────────────────────────────────────
-
+@st.cache_data(ttl=60)
 def get_btc_regime() -> dict:
-    """Returns regime dict for 15m, 1H, 4H using OKX data."""
     result = {}
-    tf_map = {"15m": "15m", "1H": "1H", "4H": "4H"}
-    for label, tf in tf_map.items():
-        try:
-            df = okx_klines("BTC-USDT-SWAP", tf, limit=120)
-            if df.empty or len(df) < 20:
-                result[label] = {"regime": "Unknown", "sep": 0, "price": None}
-                continue
-            df = add_indicators(df)
-            last = df.iloc[-1]
-            s20  = last.get("sma20",  np.nan)
-            s100 = last.get("sma100", np.nan)
-            if pd.isna(s20) or pd.isna(s100) or s100 == 0:
-                result[label] = {"regime": "Unknown", "sep": 0, "price": last["close"]}
-                continue
-            sep = (s20 - s100) / s100
-            trending = abs(sep) >= REGIME_SMA_SEP
-            result[label] = {
-                "regime": "Trending" if trending else "Ranging",
-                "direction": "Up" if sep > 0 else "Down",
-                "sep_pct": round(abs(sep) * 100, 2),
-                "price": round(last["close"], 2),
-                "sma20": round(s20, 2),
-                "sma100": round(s100, 2),
-            }
-        except Exception:
-            result[label] = {"regime": "Unknown", "sep": 0, "price": None}
+    for label, interval, limit in [("15m","15m",130),("1H","1h",60),("4H","4h",60)]:
+        df, active = get_btc_data_with_failover(interval, limit)
+        if df.empty or len(df) < 20:
+            result[label] = {"regime":"Unknown","dir":"—","sep":0,"price":"—","active":active}
+            continue
+        df   = add_indicators(df)
+        last = df.iloc[-1]
+        s20, s100 = last.get("sma20", np.nan), last.get("sma100", np.nan)
+        if pd.isna(s20) or pd.isna(s100) or s100 == 0:
+            result[label] = {"regime":"Unknown","dir":"—","sep":0,"price":round(last["close"],2),"active":active}
+            continue
+        sep = (s20 - s100) / s100
+        result[label] = {
+            "regime": "Trending" if abs(sep) >= REGIME_SMA_SEP else "Ranging",
+            "dir":    "Up" if sep > 0 else "Down",
+            "sep":    round(abs(sep)*100, 2),
+            "price":  round(last["close"], 2),
+            "sma20":  round(s20, 2),
+            "sma100": round(s100, 2),
+            "active": active,
+        }
     return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BTC LIQUIDITY ENGINE
+# MULTI-PAIR SCANNER
 # ─────────────────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=60)
-def get_btc_1h_data(source: str = "okx") -> pd.DataFrame:
-    """Fetch BTC 1H data from chosen source with automatic fallback."""
-    df = pd.DataFrame()
-    # Try chosen source first
-    if source == "okx":
-        df = okx_klines("BTC-USDT-SWAP", "1H", limit=60)
-    elif source == "binance":
-        df = binance_klines("BTCUSDT", "1h", 60)
-    elif source == "gate":
-        df = gate_klines("BTC_USDT", "1h", limit=60)
-    # Auto-fallback chain if chosen source fails
-    if df.empty and source != "okx":
-        df = okx_klines("BTC-USDT-SWAP", "1H", limit=60)
-    if df.empty and source != "gate":
-        df = gate_klines("BTC_USDT", "1h", limit=60)
-    if df.empty and source != "binance":
-        df = binance_klines("BTCUSDT", "1h", 60)
-    if df.empty:
-        return pd.DataFrame()
-    return add_indicators(df)
-
-
-def get_bias(df: pd.DataFrame) -> str:
-    return get_bias_15m(df)  # same logic works for 1H
-
-
-def get_liquidity_levels(df: pd.DataFrame) -> dict:
-    if df.empty:
-        return {"highs": [], "lows": []}
-    highs, lows = get_swing_levels(df, lookback=40)
-    price = df.iloc[-1]["close"]
-    nearby_highs = [h for h in highs if h > price][:3]
-    nearby_lows  = [l for l in lows  if l < price][:3]
-    return {
-        "highs": [round(h, 2) for h in nearby_highs],
-        "lows":  [round(l, 2) for l in nearby_lows],
-        "price": round(price, 2),
-    }
-
-
-def get_sweep(df: pd.DataFrame) -> Optional[dict]:
-    """Detect recent liquidity sweep (wick beyond prior swing)."""
-    if df.empty or len(df) < 10:
-        return None
-    price = df.iloc[-1]["close"]
-    highs, lows = get_swing_levels(df.iloc[:-5], lookback=30)
-
-    last3 = df.tail(5)
-    for _, row in last3.iterrows():
-        if highs and row["high"] > highs[0] and row["close"] < highs[0]:
-            return {
-                "type": "Bearish sweep",
-                "level": round(highs[0], 2),
-                "candle_close": round(row["close"], 2),
-            }
-        if lows and row["low"] < lows[0] and row["close"] > lows[0]:
-            return {
-                "type": "Bullish sweep",
-                "level": round(lows[0], 2),
-                "candle_close": round(row["close"], 2),
-            }
-    return None
-
-
-def get_impulse(df: pd.DataFrame) -> Optional[dict]:
-    """Detect recent impulse move (large candle > 1.5x avg body)."""
-    if df.empty or len(df) < 5:
-        return None
-    last5 = df.tail(5)
-    for i in range(len(last5) - 1, -1, -1):
-        row = last5.iloc[i]
-        avg_b = row.get("avg_body", np.nan)
-        body  = row.get("body",     0)
-        if not pd.isna(avg_b) and avg_b > 0 and body >= EXPANSION_BODY_RATIO * avg_b:
-            direction = "bullish" if row["close"] > row["open"] else "bearish"
-            pct = body / row["close"] * 100
-            return {
-                "direction": direction,
-                "magnitude_pct": round(pct, 2),
-                "candle_idx": i,
-            }
-    return None
-
-
-def get_pullback_zone(df: pd.DataFrame, impulse: Optional[dict]) -> Optional[dict]:
-    """Expected pullback zone around SMA20."""
-    if df.empty or "sma20" not in df.columns:
-        return None
-    last  = df.iloc[-1]
-    s20   = last.get("sma20", np.nan)
-    price = last["close"]
-    if pd.isna(s20):
-        return None
-    lower = round(s20 * 0.995, 2)
-    upper = round(s20 * 1.005, 2)
-    in_zone = lower <= price <= upper
-    return {
-        "lower": lower,
-        "upper": upper,
-        "sma20": round(s20, 2),
-        "in_zone": in_zone,
-    }
-
-
-def get_price_path(df: pd.DataFrame, bias: str, sweep: Optional[dict],
-                   impulse: Optional[dict]) -> str:
-    """Generate narrative price path description."""
-    if df.empty:
-        return "Insufficient data to determine price path."
-    last  = df.iloc[-1]
-    price = round(last["close"], 2)
-
-    parts = []
-    if bias == "bullish":
-        parts.append(f"BTC is in a bullish structure at ${price:,}.")
-    elif bias == "bearish":
-        parts.append(f"BTC is in a bearish structure at ${price:,}.")
-    else:
-        parts.append(f"BTC is ranging near ${price:,}.")
-
-    if sweep:
-        parts.append(f"{sweep['type']} detected at ${sweep['level']:,} — price rejected and closed at ${sweep['candle_close']:,}.")
-
-    if impulse:
-        parts.append(f"Recent {impulse['direction']} impulse of {impulse['magnitude_pct']}% suggests momentum.")
-    else:
-        parts.append("No strong impulse in the last 5 candles.")
-
-    liq = get_liquidity_levels(df)
-    if liq["highs"]:
-        parts.append(f"Liquidity resting above at ${liq['highs'][0]:,}.")
-    if liq["lows"]:
-        parts.append(f"Support/liquidity below at ${liq['lows'][0]:,}.")
-
-    return " ".join(parts)
-
-
-@st.cache_data(ttl=60)
-def build_btc_liquidity_panel(source: str = "okx") -> dict:
-    df = get_btc_1h_data(source)
-    if df.empty:
-        return {"error": f"Unable to fetch BTC 1H data from {source.upper()} or any fallback source"}
-
-    bias    = get_bias(df)
-    levels  = get_liquidity_levels(df)
-    sweep   = get_sweep(df)
-    impulse = get_impulse(df)
-    zone    = get_pullback_zone(df, impulse)
-    path    = get_price_path(df, bias, sweep, impulse)
-
-    rsi_val = df.iloc[-1].get("rsi14", np.nan)
-
-    return {
-        "bias":      bias,
-        "levels":    levels,
-        "sweep":     sweep,
-        "impulse":   impulse,
-        "zone":      zone,
-        "narrative": path,
-        "price":     levels.get("price"),
-        "rsi":       round(rsi_val, 1) if not pd.isna(rsi_val) else None,
-        "source":    source.upper(),
-    }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MULTI-PAIR SCANNER ENGINE
-# ─────────────────────────────────────────────────────────────────────────────
-
-def normalize_pair(raw: str, source: str) -> str:
-    """Normalize pair name for display."""
-    raw = raw.upper()
-    if source == "okx":
-        return raw.replace("-SWAP", "").replace("-", "/")
-    if source == "gate":
-        return raw.replace("_", "/")
-    if source == "mexc":
-        return raw.replace("_", "/")
-    return raw
-
-
-def get_tf_klines(pair: str, source: str, tf: str, limit: int = 120) -> pd.DataFrame:
-    """Route kline fetch to the right exchange function."""
-    try:
-        if source == "okx":
-            tf_map = {"3m": "3m", "5m": "5m", "15m": "15m"}
-            return okx_klines(pair, tf_map.get(tf, tf), limit)
-        if source == "gate":
-            tf_map = {"3m": "3m", "5m": "5m", "15m": "15m"}
-            return gate_klines(pair, tf_map.get(tf, tf), limit)
-        if source == "mexc":
-            tf_map = {"3m": "Min3", "5m": "Min5", "15m": "Min15"}
-            return mexc_klines(pair, tf_map.get(tf, tf), limit)
-    except Exception:
-        return pd.DataFrame()
-    return pd.DataFrame()
-
 
 def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
-    """
-    Scan a single pair on a given timeframe.
-    Returns signal dict or None.
-    """
     try:
-        df_exec = get_tf_klines(pair, source, tf, limit=130)
-        df_15m  = get_tf_klines(pair, source, "15m", limit=130)
+        df = get_tf_klines(pair, source, tf, 130)
+        if df.empty or len(df) < 25:
+            return None
+        df = add_indicators(df)
 
-        if df_exec.empty or len(df_exec) < 25:
+        price = df.iloc[-1]["close"]
+        rsi   = df.iloc[-1].get("rsi14", np.nan)
+
+        # Always check compression state
+        comp = detect_compression_state(df)
+
+        signal_type = None
+        direction   = None
+        candle_type = None
+        signal_age  = 0
+        health_info = None
+
+        # Priority 1: Reversal after exhaustion
+        rev = detect_reversal(df)
+        if rev:
+            health = assess_trend_health(df, rev["direction"])
+            if health["health"] == "EXHAUSTED":
+                signal_type = "REVERSAL"
+                direction   = rev["direction"]
+                candle_type = rev["candle_type"]
+                health_info = health
+
+        # Priority 2: Fresh expansion from compression
+        if not signal_type:
+            exp = detect_expansion(df)
+            if exp:
+                bias_15m = get_15m_bias(pair, source)
+                # Drop contradictory bias
+                if exp["direction"] == "long"  and bias_15m == "bearish": pass
+                elif exp["direction"] == "short" and bias_15m == "bullish": pass
+                else:
+                    signal_type = "EXPANSION"
+                    direction   = exp["direction"]
+                    candle_type = exp["candle_type"]
+                    signal_age  = exp["signal_age"]
+
+        # Priority 3: Pullback continuation
+        if not signal_type:
+            pb = detect_pullback(df)
+            if pb:
+                bias_15m = get_15m_bias(pair, source)
+                if pb["direction"] == "long"  and bias_15m == "bearish": pass
+                elif pb["direction"] == "short" and bias_15m == "bullish": pass
+                else:
+                    signal_type = "PULLBACK"
+                    direction   = pb["direction"]
+                    candle_type = pb["candle_type"]
+
+        # Log compression even without signal
+        if not signal_type:
+            if comp["state"] != "NONE":
+                add_log(source.upper(), pair_display(pair, source),
+                        comp["state"], "—", "—")
             return None
 
-        df_exec = add_indicators(df_exec)
-        df_15m  = add_indicators(df_15m) if not df_15m.empty and len(df_15m) >= 20 else df_15m
-
-        last  = df_exec.iloc[-1]
-        price = last["close"]
-        rsi   = last.get("rsi14", np.nan)
-
-        # Mutual exclusion: expansion OR reversion, not both
-        exp_dir = detect_expansion(df_exec)
-        rev_dir = detect_reversion(df_exec)
-        pb_dir  = detect_pullback(df_exec)
-
-        setup = None
-        direction = None
-
-        if exp_dir:
-            setup = "Expansion"
-            direction = exp_dir
-        elif pb_dir and not exp_dir:
-            setup = "Pullback"
-            direction = pb_dir
-        elif rev_dir and not exp_dir:
-            setup = "Reversion"
-            direction = rev_dir
-        else:
-            return None
-
-        # 15m bias — get early so we can filter contradictory signals
-        bias_15m = get_bias_15m(df_15m) if not df_15m.empty else "neutral"
-
-        # FILTER: Drop signals that go hard against 15m trend
-        # Short with Bullish 15m, or Long with Bearish 15m → skip
-        if direction == "long" and bias_15m == "bearish":
-            return None
-        if direction == "short" and bias_15m == "bullish":
-            return None
-
-        # Signal age — check if signal just appeared or was there before
-        signal_age = 0
-        if len(df_exec) > 3:
-            was_there_1_ago = False
-            was_there_2_ago = False
-            if setup == "Expansion":
-                was_there_1_ago = detect_expansion(df_exec.iloc[:-1]) is not None
-                was_there_2_ago = detect_expansion(df_exec.iloc[:-2]) is not None
-            elif setup == "Pullback":
-                was_there_1_ago = detect_pullback(df_exec.iloc[:-1]) is not None
-                was_there_2_ago = detect_pullback(df_exec.iloc[:-2]) is not None
-
-            if was_there_2_ago:
-                signal_age = 2
-            elif was_there_1_ago:
-                signal_age = 1
-            else:
-                signal_age = 0
-
-        # Drop signals older than 2 candles
         if signal_age > MAX_SIGNAL_AGE:
             return None
 
-        # Room and obstacle
-        room_info     = check_liquidity_hole(df_exec, direction)
-        obstacle_info = check_firewalls(df_exec, direction)
+        bias_15m = get_15m_bias(pair, source)
 
-        # FILTER: Drop signals where next swing is less than 0.5% away — too crowded
-        room_reason = room_info.get("reason", "")
-        if room_info["room"] == "Limited":
-            # Extract distance from reason string e.g. "Next swing 0.1% away"
+        # Final contradictory filter
+        if signal_type in ("EXPANSION","PULLBACK"):
+            if direction == "long"  and bias_15m == "bearish": return None
+            if direction == "short" and bias_15m == "bullish": return None
+
+        room, room_d, obs, obs_d = check_room_obstacle(df, direction)
+
+        # Filter: less than 0.5% room
+        if room == "Limited":
             try:
-                dist_str = room_reason.split("Next swing ")[1].split("%")[0]
-                dist_val = float(dist_str)
-                if dist_val < 0.5:
-                    return None  # Too close to next swing, no room at all
+                d = float(room_d.split("Next swing ")[1].split("%")[0])
+                if d < 0.5:
+                    return None
             except Exception:
                 pass
 
-        # Candle quality
-        cq = classify_candle(df_exec, -1)
-        if cq == "weak":
-            cq = classify_candle(df_exec, -2)
-
-        # FILTER: Drop weak candle quality signals entirely
-        if cq == "weak":
-            return None
-
-        score, tier, conviction_parts = score_signal(
-            signal_age, setup, bias_15m, direction,
-            room_info["room"], obstacle_info["obstacle"],
-            rsi, cq
-        )
-
-        # FILTER: Drop very low quality signals (score < 30)
+        score, tier, parts = score_signal(signal_age, candle_type, bias_15m,
+                                          direction, room, obs, rsi)
         if score < 30:
             return None
 
-        display_name = normalize_pair(pair, source)
+        disp      = pair_display(pair, source)
+        freshness = "New" if signal_age == 0 else f"{signal_age} candle{'s' if signal_age > 1 else ''} ago"
+
+        add_log(source.upper(), disp, comp["state"],
+                f"{signal_type} {direction.upper()}", tier)
 
         return {
-            "pair":         display_name,
-            "raw_pair":     pair,
-            "source":       source,
-            "tf":           tf,
-            "setup":        setup,
-            "direction":    direction.capitalize(),
-            "score":        score,
-            "tier":         tier,
-            "conviction":   f"{tier} ({' • '.join(conviction_parts)})",
-            "bias_15m":     bias_15m.capitalize(),
-            "rsi":          round(rsi, 1) if not pd.isna(rsi) else "—",
-            "room":         room_info["room"],
-            "room_reason":  room_info["reason"],
-            "obstacle":     obstacle_info["obstacle"],
-            "obs_reason":   obstacle_info["reason"],
-            "freshness":    "New" if signal_age == 0 else f"{signal_age} candle{'s' if signal_age > 1 else ''} ago",
-            "signal_age":   signal_age,
-            "price":        round(price, 4),
+            "pair":        disp,
+            "raw_pair":    pair,
+            "source":      source,
+            "tf":          tf,
+            "signal_type": signal_type,
+            "direction":   direction.capitalize(),
+            "candle_type": candle_type or "—",
+            "score":       score,
+            "tier":        tier,
+            "parts":       parts,
+            "bias_15m":    bias_15m.capitalize(),
+            "rsi":         round(rsi, 1) if not pd.isna(rsi) else "—",
+            "room":        room,
+            "room_d":      room_d,
+            "obs":         obs,
+            "obs_d":       obs_d,
+            "freshness":   freshness,
+            "signal_age":  signal_age,
+            "comp_state":  comp["state"],
+            "price":       round(price, 4),
+            "health":      health_info,
         }
     except Exception:
         return None
@@ -1034,387 +968,357 @@ def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
 
 @st.cache_data(ttl=60)
 def run_scanner(tf: str, exchanges: list = None) -> pd.DataFrame:
-    """
-    Run the full multi-pair scanner for a given timeframe.
-    exchanges: list of exchange keys e.g. ["okx", "gate", "mexc"]
-    """
     if exchanges is None:
         exchanges = ["okx", "gate", "mexc"]
 
-    results = []
     pair_sources = []
-
     if "okx" in exchanges:
-        okx_pairs = okx_top_pairs(35)
-        for p in okx_pairs[:30]:
+        for p in okx_top_pairs(28):
             pair_sources.append((p, "okx"))
-
-    if "gate" in exchanges or "gateio" in exchanges:
-        gate_pairs = gate_top_pairs(25)
-        for p in gate_pairs[:20]:
-            norm = normalize_pair(p, "gate")
-            existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
-            if norm not in existing:
+    if "gate" in exchanges:
+        for p in gate_top_pairs(18):
+            nm = pair_display(p, "gate")
+            if nm not in {pair_display(x[0], x[1]) for x in pair_sources}:
                 pair_sources.append((p, "gate"))
-
     if "mexc" in exchanges:
-        mexc_pairs = mexc_top_pairs(20)
-        for p in mexc_pairs[:15]:
-            norm = normalize_pair(p, "mexc")
-            existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
-            if norm not in existing:
+        for p in mexc_top_pairs(12):
+            nm = pair_display(p, "mexc")
+            if nm not in {pair_display(x[0], x[1]) for x in pair_sources}:
                 pair_sources.append((p, "mexc"))
 
     if not pair_sources:
         return pd.DataFrame()
 
-    # Limit total pairs
     pair_sources = pair_sources[:50]
-
+    results  = []
     progress = st.empty()
-    total = len(pair_sources)
 
     for i, (pair, source) in enumerate(pair_sources):
-        progress.caption(f"Scanning {i+1}/{total}: {normalize_pair(pair, source)}")
+        progress.caption(f"Scanning {i+1}/{len(pair_sources)}: {pair_display(pair, source)}")
         sig = scan_pair(pair, source, tf)
         if sig:
             results.append(sig)
-        # Small delay to avoid rate limits
-        time.sleep(0.05)
+        time.sleep(0.04)
 
     progress.empty()
-
     if not results:
         return pd.DataFrame()
 
     df = pd.DataFrame(results)
-    df = df.sort_values("score", ascending=False).reset_index(drop=True)
-    return df
+    pri = {"REVERSAL": 0, "EXPANSION": 1, "PULLBACK": 2}
+    df["_p"] = df["signal_type"].map(pri).fillna(3)
+    df = df.sort_values(["_p", "score"], ascending=[True, False]).drop("_p", axis=1)
+    return df.reset_index(drop=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BTC REGIME BOX RENDERER
+# RENDERERS
 # ─────────────────────────────────────────────────────────────────────────────
 
-@st.cache_data(ttl=60)
-def get_btc_regime_cached() -> dict:
-    return get_btc_regime()
-
-
-def render_regime_box(regime: dict):
-    st.markdown('<p class="section-title">📊 BTC Market Regime</p>', unsafe_allow_html=True)
+def render_regime(regime: dict):
+    st.markdown('<div class="card-title">BTC MARKET REGIME</div>', unsafe_allow_html=True)
     cols = st.columns(3)
-    tf_labels = {"15m": "15-Minute", "1H": "1-Hour", "4H": "4-Hour"}
-    for i, (tf, label) in enumerate(tf_labels.items()):
+    for i, (tf, label) in enumerate([("15m","15-Min"),("1H","1-Hour"),("4H","4-Hour")]):
         with cols[i]:
             r = regime.get(tf, {})
-            reg    = r.get("regime",    "Unknown")
-            dirn   = r.get("direction", "—")
-            sep    = r.get("sep_pct",   0)
-            price  = r.get("price",     "—")
-            s20    = r.get("sma20",     "—")
-            s100   = r.get("sma100",    "—")
-
-            css_class = "regime-trending" if reg == "Trending" else "regime-ranging"
-            icon = "🟢" if reg == "Trending" and dirn == "Up" else \
-                   "🔴" if reg == "Trending" and dirn == "Down" else "🟡"
-
+            reg, dirn, sep, price = r.get("regime","Unknown"), r.get("dir","—"), r.get("sep",0), r.get("price","—")
+            if reg == "Trending" and dirn == "Up":
+                css, icon = "regime-up",   "▲"
+            elif reg == "Trending" and dirn == "Down":
+                css, icon = "regime-down", "▼"
+            else:
+                css, icon = "regime-range","◆"
+            active = r.get("active","—")
             st.markdown(f"""
-            <div class="regime-box {css_class}">
-                <div style="font-weight:700; font-size:0.9rem; color:#343a40;">{label}</div>
-                <div style="font-size:1.3rem; font-weight:800; margin:4px 0;">{icon} {reg}</div>
-                <div style="font-size:0.78rem; color:#495057;">
-                    Direction: <b>{dirn}</b> &nbsp;|&nbsp; SMA gap: <b>{sep}%</b>
-                </div>
-                <div style="font-size:0.75rem; color:#6c757d; margin-top:4px;">
-                    Price: {price} &nbsp; SMA20: {s20} &nbsp; SMA100: {s100}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            <div class="{css}">
+              <div class="regime-label">{icon} {label} — {reg}</div>
+              <div class="regime-meta">Dir:{dirn} | Gap:{sep}% | ${price:,} | {active}</div>
+            </div>""", unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BTC LIQUIDITY PANEL RENDERER
-# ─────────────────────────────────────────────────────────────────────────────
-
-def render_liquidity_panel(panel: dict):
-    st.markdown('<p class="section-title">💧 BTC Liquidity Engine (1H)</p>', unsafe_allow_html=True)
-
+def render_liquidity(panel: dict):
     if "error" in panel:
-        st.warning(f"Liquidity data unavailable: {panel['error']}")
+        st.warning(f"⚠ Liquidity engine unavailable: {panel['error']}")
         return
 
-    bias   = panel.get("bias",   "neutral")
-    price  = panel.get("price",  "—")
-    rsi    = panel.get("rsi",    "—")
-    sweep  = panel.get("sweep")
-    imp    = panel.get("impulse")
-    zone   = panel.get("zone")
-    levels = panel.get("levels", {})
-    narr   = panel.get("narrative", "")
+    active  = panel.get("active","—")
+    bias    = panel.get("bias","neutral")
+    price   = panel.get("price","—")
+    rsi     = panel.get("rsi","—")
+    sweep   = panel.get("sweep")
+    imp     = panel.get("impulse")
+    zone    = panel.get("zone")
+    levels  = panel.get("levels", {})
 
-    bias_tag = f'<span class="tag-bullish">Bullish</span>' if bias == "bullish" else \
-               f'<span class="tag-bearish">Bearish</span>' if bias == "bearish" else \
-               f'<span class="tag-neutral">Neutral</span>'
+    bias_tag = (f'<span class="tag tag-bull">Bullish</span>' if bias == "bullish" else
+                f'<span class="tag tag-bear">Bearish</span>' if bias == "bearish" else
+                f'<span class="tag tag-neut">Neutral</span>')
 
     sweep_html = "None detected"
     if sweep:
-        stype = sweep["type"]
-        slvl  = sweep["level"]
-        sclose= sweep["candle_close"]
-        sweep_html = f'<span style="color:{"#155724" if "Bullish" in stype else "#721c24"}; font-weight:600;">{stype}</span> at ${slvl:,} → closed ${sclose:,}'
+        col = "#1db954" if "BULL" in sweep["type"] else "#e53935"
+        sweep_html = (f'<span style="color:{col};font-weight:700;">{sweep["type"]}</span> '
+                      f'@ ${sweep["level"]:,} | Wick:{sweep["wick_pct"]}% | '
+                      f'Confirmed:{"✓" if sweep["confirmed"] else "✗"} | '
+                      f'{sweep["bars_ago"]} bars ago')
 
-    impulse_html = "No recent impulse"
+    imp_html = "No recent impulse"
     if imp:
-        direction_label = "Bullish" if imp["direction"] == "bullish" else "Bearish"
-        impulse_html = f'<span style="color:{"#155724" if direction_label=="Bullish" else "#721c24"}; font-weight:600;">{direction_label}</span> impulse {imp["magnitude_pct"]}%'
+        col = "#1db954" if imp["direction"] == "bullish" else "#e53935"
+        imp_html = (f'<span style="color:{col};font-weight:700;">'
+                    f'{imp["direction"].capitalize()}</span> {imp["pct"]}% · {imp["bars_ago"]} bars ago')
 
-    zone_html = "Awaiting pullback"
+    zone_html = "—"
     if zone:
-        in_z = zone["in_zone"]
-        zone_html = f'${zone["lower"]:,} — ${zone["upper"]:,} (SMA20: ${zone["sma20"]:,})'
-        if in_z:
-            zone_html += ' <span class="tag-bullish">In Zone ✓</span>'
+        zone_html = f"${zone['lower']:,} – ${zone['upper']:,}"
+        if zone["in_zone"]:
+            zone_html += ' <span class="tag tag-bull">In Zone ✓</span>'
 
-    highs_str = "  ".join([f"${h:,}" for h in levels.get("highs", [])]) or "—"
-    lows_str  = "  ".join([f"${l:,}" for l in levels.get("lows",  [])]) or "—"
+    bsl_str = " | ".join([f"${p:,}" for p in levels.get("bsl", [])]) or "—"
+    ssl_str = " | ".join([f"${p:,}" for p in levels.get("ssl", [])]) or "—"
 
     st.markdown(f"""
-    <div class="liq-panel">
-        <div class="narrative-text" style="margin-bottom:12px; padding:10px; background:#f8f9fa; border-radius:6px; border-left:3px solid #1a1a2e;">
-            {narr}
+    <div class="card">
+      <div class="card-title">BTC LIQUIDITY ENGINE (1H) &nbsp;
+        <span class="exch-badge">{active}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;font-size:0.82rem;">
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">Bias & Price</div>
+          <div>{bias_tag} &nbsp;<b>${price:,}</b> &nbsp;RSI:{rsi}</div>
         </div>
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Bias</div>
-                <div style="margin-top:4px;">{bias_tag} &nbsp; ${price:,} &nbsp; RSI: {rsi}</div>
-            </div>
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Liquidity Sweep</div>
-                <div style="margin-top:4px; font-size:0.85rem;">{sweep_html}</div>
-            </div>
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Impulse</div>
-                <div style="margin-top:4px; font-size:0.85rem;">{impulse_html}</div>
-            </div>
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Pullback Zone</div>
-                <div style="margin-top:4px; font-size:0.85rem;">{zone_html}</div>
-            </div>
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Resistance Levels</div>
-                <div style="margin-top:4px; font-size:0.85rem; color:#721c24;">{highs_str}</div>
-            </div>
-            <div>
-                <div style="font-size:0.75rem; color:#6c757d; text-transform:uppercase; font-weight:600;">Support Levels</div>
-                <div style="margin-top:4px; font-size:0.85rem; color:#155724;">{lows_str}</div>
-            </div>
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">Liquidity Sweep</div>
+          <div>{sweep_html}</div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">1H Impulse</div>
+          <div>{imp_html}</div>
+        </div>
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">Pullback Zone (SMA20 ±0.38%)</div>
+          <div>{zone_html}</div>
+        </div>
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">Buy-Side Liq (BSL)</div>
+          <div style="color:#e53935;">{bsl_str}</div>
+        </div>
+        <div>
+          <div style="font-size:0.67rem;color:#888;text-transform:uppercase;font-weight:600;margin-bottom:4px;">Sell-Side Liq (SSL)</div>
+          <div style="color:#1db954;">{ssl_str}</div>
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SCANNER TABLE RENDERER
-# ─────────────────────────────────────────────────────────────────────────────
+def render_signal_card(row: dict):
+    sig   = row.get("signal_type","")
+    dirn  = row.get("direction","")
+    tier  = row.get("tier","LOW")
+    parts = row.get("parts", [])
+    comp  = row.get("comp_state","")
+    health = row.get("health")
 
-def tier_html(tier: str, text: str) -> str:
-    cls = f"signal-{'high' if tier=='HIGH' else 'medium' if tier=='MEDIUM' else 'low'}"
-    return f'<span class="{cls}">{text}</span>'
+    css = {"REVERSAL":"sig-reversal","EXPANSION":"sig-expansion","PULLBACK":"sig-pullback"}.get(sig,"sig-expansion")
+    dir_cls = "sig-long" if dirn == "Long" else "sig-short"
+    arr     = "▲" if dirn == "Long" else "▼"
+
+    badge = (f'<span class="badge-high">HIGH</span>'   if tier == "HIGH" else
+             f'<span class="badge-medium">MEDIUM</span>' if tier == "MEDIUM" else
+             f'<span class="badge-low">LOW</span>')
+
+    score_bar = f'{row.get("score",0)}/100'
+
+    comp_tag = ""
+    if comp == "SQZ":
+        comp_tag = '<span class="tag tag-sqz">SQZ</span>'
+    elif comp == "CROSSOVER":
+        comp_tag = '<span class="tag tag-cross">CROSSOVER</span>'
+
+    bias = row.get("bias_15m","")
+    bias_tag = (f'<span class="tag tag-bull">15m Bullish</span>' if "bullish" in bias.lower() else
+                f'<span class="tag tag-bear">15m Bearish</span>' if "bearish" in bias.lower() else
+                f'<span class="tag tag-neut">15m Neutral</span>')
+
+    health_html = ""
+    if health:
+        hcol = "#1db954" if health["health"]=="HEALTHY" else "#e53935" if health["health"]=="EXHAUSTED" else "#f5a623"
+        health_html = f'<span style="color:{hcol};font-weight:700;font-size:0.72rem;">Trend:{health["health"]} ({health["score"]}/5)</span> &nbsp;'
+
+    obs_html = (f'✓ No obstacle' if row.get("obs","None") == "None"
+                else f'⚠ {row.get("obs","")} — {row.get("obs_d","")}')
+
+    reason = " • ".join(parts)
+
+    st.markdown(f"""
+    <div class="{css}">
+      <div class="sig-type">{sig} &nbsp;{comp_tag}&nbsp;{badge}&nbsp;{score_bar}</div>
+      <div class="sig-title">
+        <span class="{dir_cls}">{arr} {dirn}</span> &nbsp;
+        {row.get('pair','')}
+        <span style="color:#888;font-weight:400;font-size:0.82rem;">
+          &nbsp;{row.get('tf','')} · ${row.get('price','')} · RSI {row.get('rsi','')}
+        </span>
+      </div>
+      <div class="sig-body">
+        {health_html}{bias_tag}
+        &nbsp; Candle: <b>{row.get('candle_type','—')}</b>
+        &nbsp; Freshness: <b>{row.get('freshness','—')}</b>
+        <br>Room: <b>{row.get('room','—')}</b> — {row.get('room_d','')}
+        <br><span style="color:#888;">{obs_html}</span>
+        <br><span style="color:#777;font-size:0.74rem;">Reason: {reason}</span>
+      </div>
+    </div>""", unsafe_allow_html=True)
 
 
-def render_scanner_table(df: pd.DataFrame, direction_filter: str, show_all: bool):
+def render_scan_log():
+    if not st.session_state.scan_log:
+        st.caption("No scans yet — run scanner above.")
+        return
+    rows = ""
+    for e in st.session_state.scan_log:
+        sig_cls  = "log-sig"  if e["signal"] not in ("—","") else ""
+        comp_cls = "log-comp" if e["comp"]   not in ("NONE","—","") else ""
+        rows += (f'<div class="log-row">'
+                 f'{e["time"]} &nbsp; <b>{e["exchange"]}</b> &nbsp; {e["pair"]} &nbsp;'
+                 f'<span class="{comp_cls}">{e["comp"]}</span> &nbsp;'
+                 f'<span class="{sig_cls}">{e["signal"]}</span> &nbsp;'
+                 f'{e["conviction"]}</div>')
+    st.markdown(f'<div class="card" style="padding:12px 16px;">{rows}</div>', unsafe_allow_html=True)
+
+
+def render_scanner(df: pd.DataFrame, dir_filter: str, show_all: bool):
     if df.empty:
-        st.info("No signals found. Try refreshing or check exchange connectivity.")
+        st.markdown("""
+        <div class="card" style="text-align:center;padding:28px;color:#888;">
+          No signals found right now. Markets may be in compression — that is the setup. Watch for the breakout.
+        </div>""", unsafe_allow_html=True)
         return
 
-    # Filter by direction
     filtered = df.copy()
-    if direction_filter == "Longs":
+    if dir_filter == "Longs":
         filtered = filtered[filtered["direction"] == "Long"]
-    elif direction_filter == "Shorts":
+    elif dir_filter == "Shorts":
         filtered = filtered[filtered["direction"] == "Short"]
 
-    filtered = filtered.sort_values("score", ascending=False)
-    display_df = filtered if show_all else filtered.head(10)
+    display = filtered if show_all else filtered.head(10)
 
-    if display_df.empty:
-        st.info(f"No {direction_filter.lower()} signals found.")
+    if display.empty:
+        st.info(f"No {dir_filter.lower()} signals at this moment.")
         return
 
-    # Build clean display dataframe
-    rows = []
-    for _, row in display_df.iterrows():
-        tier      = row.get("tier", "LOW")
-        direction = row.get("direction", "—")
-        dir_arrow = "↑ Long" if direction == "Long" else "↓ Short"
+    for _, row in display.iterrows():
+        render_signal_card(row.to_dict())
 
-        conviction_text   = row.get("conviction", "—")
-        conviction_detail = conviction_text.split("(")[1].rstrip(")") if "(" in conviction_text else "—"
-
-        rsi_val = row.get("rsi", "—")
-        rsi_str = str(rsi_val)
-        if isinstance(rsi_val, (int, float)):
-            if rsi_val > 70:
-                rsi_str = f"{rsi_val} ⚠ High"
-            elif rsi_val < 30:
-                rsi_str = f"{rsi_val} ⚠ Low"
-
-        room_label  = row.get("room", "—")
-        room_reason = row.get("room_reason", "")
-        obs_label   = row.get("obstacle", "—")
-        obs_reason  = row.get("obs_reason", "")
-
-        tier_icon = "🟢" if tier == "HIGH" else "🟡" if tier == "MEDIUM" else "🔴"
-
-        rows.append({
-            "Pair":           f"{row.get('pair','—')} ({row.get('source','').upper()})",
-            "Setup":          row.get("setup", "—"),
-            "Direction":      dir_arrow,
-            "Conviction":     f"{tier_icon} {tier}",
-            "Reason":         conviction_detail,
-            "15m Bias":       row.get("bias_15m", "—"),
-            "RSI":            rsi_str,
-            "Room":           f"{room_label} — {room_reason}",
-            "Obstacle":       f"{obs_label} — {obs_reason}" if obs_reason else obs_label,
-            "Freshness":      row.get("freshness", "—"),
-            "Score":          row.get("score", 0),
-        })
-
-    display = pd.DataFrame(rows)
-
-    st.dataframe(
-        display,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Pair":       st.column_config.TextColumn("Pair", width="medium"),
-            "Setup":      st.column_config.TextColumn("Setup", width="small"),
-            "Direction":  st.column_config.TextColumn("Direction", width="small"),
-            "Conviction": st.column_config.TextColumn("Conviction", width="small"),
-            "Reason":     st.column_config.TextColumn("Why", width="large"),
-            "15m Bias":   st.column_config.TextColumn("15m Bias", width="small"),
-            "RSI":        st.column_config.TextColumn("RSI", width="small"),
-            "Room":       st.column_config.TextColumn("Room to Move", width="medium"),
-            "Obstacle":   st.column_config.TextColumn("Obstacle", width="medium"),
-            "Freshness":  st.column_config.TextColumn("Freshness", width="small"),
-            "Score":      st.column_config.ProgressColumn("Score", min_value=0, max_value=100, width="small"),
-        }
-    )
-    st.caption(f"Showing {len(display_df)} of {len(filtered)} signals · Sorted by score")
+    st.caption(f"Showing {len(display)} of {len(filtered)} · Priority: Reversal > Expansion > Pullback · Sorted by score")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MAIN APP
+# MAIN
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main():
-    # Auto-refresh
     if AUTOREFRESH_AVAILABLE:
-        st_autorefresh(interval=60000, key="scanner_refresh")
+        st_autorefresh(interval=60000, key="edge_refresh")
 
-    # Header
-    now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
-    st.markdown(f'<p class="main-header">📡 Crypto Futures Scanner</p>', unsafe_allow_html=True)
-    st.markdown(f'<p class="sub-header">Live scanner · Auto-refreshes every 60s · Last update: {now_utc}</p>',
-                unsafe_allow_html=True)
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M UTC · %d %b %Y")
 
-    # Top controls
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 2, 3])
-    with ctrl_col1:
-        if st.button("🔄 Scan Now"):
+    # ── Header row ───────────────────────────────────────────────────────────
+    h1, h2, h3, h4 = st.columns([3, 2, 3, 1])
+    with h1:
+        st.markdown(f"""
+        <div style="padding:6px 0;">
+          <span style="font-size:1.15rem;font-weight:800;color:#111;">📡 Edge Scanner</span>
+          <span style="font-size:0.7rem;color:#888;font-family:'IBM Plex Mono',monospace;margin-left:12px;">{now_utc}</span>
+        </div>""", unsafe_allow_html=True)
+    with h2:
+        st.selectbox("BTC Source", ["Auto (failover)","Binance","OKX","Gate.io","MEXC","BingX"],
+                     index=0, key="btc_src", label_visibility="collapsed")
+    with h3:
+        exchanges = st.multiselect("Scan Exchanges", ["OKX","Gate.io","MEXC"],
+                                    default=["OKX","Gate.io","MEXC"],
+                                    key="scan_ex", label_visibility="collapsed")
+        if not exchanges:
+            exchanges = ["OKX"]
+    with h4:
+        if st.button("⟳ Scan Now"):
             st.cache_data.clear()
             st.rerun()
-    with ctrl_col2:
-        liq_source = st.selectbox(
-            "BTC Liquidity Source",
-            ["OKX", "Binance", "Gate.io"],
-            index=0,
-            help="Choose data source for BTC Liquidity Engine. Auto-fallback if unavailable.",
-            key="liq_source"
-        )
-    with ctrl_col3:
-        scanner_exchanges = st.multiselect(
-            "Scanner Exchanges",
-            ["OKX", "Gate.io", "MEXC"],
-            default=["OKX", "Gate.io", "MEXC"],
-            help="Choose which exchanges to scan for signals.",
-            key="scanner_exchanges"
-        )
-        if not scanner_exchanges:
-            scanner_exchanges = ["OKX"]  # always need at least one
 
     st.divider()
 
-    # ── BTC Regime Box ────────────────────────────────────────────────────
-    with st.spinner("Loading BTC regime data..."):
-        regime = get_btc_regime_cached()
-    render_regime_box(regime)
+    # ── BTC Regime ───────────────────────────────────────────────────────────
+    with st.spinner("Loading BTC regime..."):
+        regime = get_btc_regime()
+    render_regime(regime)
 
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    # ── BTC Liquidity Panel ───────────────────────────────────────────────
-    liq_src_key = liq_source.lower().replace(".", "")  # "okx" / "binance" / "gateio"
-    if liq_src_key == "gateio":
-        liq_src_key = "gate"
-    with st.spinner(f"Loading BTC liquidity engine ({liq_source})..."):
-        liq_panel = build_btc_liquidity_panel(liq_src_key)
-    # Show which source actually responded
-    src_used = liq_panel.get("source", liq_source.upper())
-    if src_used != liq_source.upper() and "error" not in liq_panel:
-        st.caption(f"⚠️ {liq_source} unavailable — showing data from {src_used}")
-    render_liquidity_panel(liq_panel)
+    # ── BTC Liquidity Panel ──────────────────────────────────────────────────
+    with st.spinner("Loading BTC liquidity engine..."):
+        liq = build_liquidity_panel()
+    render_liquidity(liq)
 
     st.divider()
 
-    # ── Engine A: Scanner Tabs ────────────────────────────────────────────
-    st.markdown('<p class="section-title">🔍 Engine A — Multi-Pair Futures Scanner</p>',
-                unsafe_allow_html=True)
+    # ── Multi-pair scanner ───────────────────────────────────────────────────
+    st.markdown('<div style="font-size:0.9rem;font-weight:800;color:#111;margin-bottom:10px;">🔍 MULTI-PAIR SCANNER</div>', unsafe_allow_html=True)
+
+    exch_keys = []
+    for e in exchanges:
+        k = e.lower().replace(".","").replace("io","")
+        k = "gate" if "gat" in k else k
+        exch_keys.append(k)
 
     tab_3m, tab_5m = st.tabs(["📊 3m Radar", "📊 5m Radar"])
 
     for tab, tf in [(tab_3m, "3m"), (tab_5m, "5m")]:
         with tab:
-            col_filter, col_toggle, _ = st.columns([2, 2, 4])
-            with col_filter:
-                direction_filter = st.radio(
-                    "Direction",
-                    ["All", "Longs", "Shorts"],
-                    horizontal=True,
-                    key=f"dir_{tf}",
-                )
-            with col_toggle:
+            fc, tc, _ = st.columns([2, 2, 4])
+            with fc:
+                dir_filter = st.radio("Direction", ["All","Longs","Shorts"],
+                                       horizontal=True, key=f"dir_{tf}")
+            with tc:
                 show_all = st.toggle("Show all signals", key=f"all_{tf}")
 
-            with st.spinner(f"Running {tf} scanner across 30+ pairs..."):
-                scanner_df = run_scanner(tf, exchanges=[e.lower().replace(".", "") for e in scanner_exchanges])
+            with st.spinner(f"Scanning {tf} across {len(pair_sources_preview(exch_keys))} pairs..."):
+                scan_df = run_scanner(tf, exchanges=exch_keys)
 
-            # Summary stats
-            if not scanner_df.empty:
-                high_cnt = len(scanner_df[scanner_df["tier"] == "HIGH"])
-                med_cnt  = len(scanner_df[scanner_df["tier"] == "MEDIUM"])
-                low_cnt  = len(scanner_df[scanner_df["tier"] == "LOW"])
-                long_cnt = len(scanner_df[scanner_df["direction"] == "Long"])
-                short_cnt= len(scanner_df[scanner_df["direction"] == "Short"])
+            if not scan_df.empty:
+                h  = len(scan_df[scan_df["tier"]=="HIGH"])
+                m  = len(scan_df[scan_df["tier"]=="MEDIUM"])
+                l  = len(scan_df[scan_df["tier"]=="LOW"])
+                lo = len(scan_df[scan_df["direction"]=="Long"])
+                sh = len(scan_df[scan_df["direction"]=="Short"])
+                c1,c2,c3,c4,c5 = st.columns(5)
+                c1.metric("Signals",    len(scan_df))
+                c2.metric("🟢 HIGH",    h)
+                c3.metric("🟡 MEDIUM",  m)
+                c4.metric("🔴 LOW",     l)
+                c5.metric("▲ / ▼",      f"{lo} / {sh}")
 
-                m1, m2, m3, m4, m5 = st.columns(5)
-                m1.metric("Total Signals", len(scanner_df))
-                m2.metric("🟢 HIGH",   high_cnt)
-                m3.metric("🟡 MEDIUM", med_cnt)
-                m4.metric("🔴 LOW",    low_cnt)
-                m5.metric("↑ Longs / ↓ Shorts", f"{long_cnt} / {short_cnt}")
+            render_scanner(scan_df, dir_filter, show_all)
 
-            render_scanner_table(scanner_df, direction_filter, show_all)
-
-    # ── Footer ────────────────────────────────────────────────────────────
+    # ── Scan log ─────────────────────────────────────────────────────────────
     st.divider()
+    with st.expander("📋 Scan Log — last 20 events", expanded=False):
+        render_scan_log()
+
+    # ── Footer ───────────────────────────────────────────────────────────────
     st.markdown("""
-    <div style="font-size:0.75rem; color:#6c757d; text-align:center; padding:8px 0;">
-        Data sources: OKX · Gate.io · MEXC · Binance (BTC only) · Public REST APIs · No keys required
-        &nbsp;|&nbsp; Engine A scans 3m &amp; 5m · Engine B analyses BTC 1H structure
-        &nbsp;|&nbsp; All signals are informational only — not financial advice
-    </div>
-    """, unsafe_allow_html=True)
+    <div style="font-size:0.7rem;color:#bbb;text-align:center;padding:10px 0;">
+      Sources: Binance · OKX · Gate.io · MEXC · BingX · All public REST APIs · No keys required
+      &nbsp;|&nbsp; Signals are informational only — not financial advice
+    </div>""", unsafe_allow_html=True)
+
+
+def pair_sources_preview(exch_keys: list) -> list:
+    """Return estimated pair count for spinner message."""
+    est = 0
+    if "okx"  in exch_keys: est += 28
+    if "gate" in exch_keys: est += 18
+    if "mexc" in exch_keys: est += 12
+    return list(range(min(est, 50)))
 
 
 if __name__ == "__main__":
