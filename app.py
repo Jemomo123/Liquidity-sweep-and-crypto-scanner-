@@ -923,35 +923,73 @@ def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
         else:
             return None
 
-        # Signal age
-        # Check if signal was present 1-2 candles back too
-        signal_age = 0
-        if setup == "Expansion":
-            if not detect_expansion(df_exec.iloc[:-1]):
-                if detect_expansion(df_exec.iloc[:-2]) if len(df_exec) > 2 else False:
-                    signal_age = 1
-                else:
-                    signal_age = 2 if detect_expansion(df_exec.iloc[:-2]) else 0
-            # Already on current candle = age 0
-            signal_age = 0
-
-        # 15m bias
+        # 15m bias — get early so we can filter contradictory signals
         bias_15m = get_bias_15m(df_15m) if not df_15m.empty else "neutral"
+
+        # FILTER: Drop signals that go hard against 15m trend
+        # Short with Bullish 15m, or Long with Bearish 15m → skip
+        if direction == "long" and bias_15m == "bearish":
+            return None
+        if direction == "short" and bias_15m == "bullish":
+            return None
+
+        # Signal age — check if signal just appeared or was there before
+        signal_age = 0
+        if len(df_exec) > 3:
+            was_there_1_ago = False
+            was_there_2_ago = False
+            if setup == "Expansion":
+                was_there_1_ago = detect_expansion(df_exec.iloc[:-1]) is not None
+                was_there_2_ago = detect_expansion(df_exec.iloc[:-2]) is not None
+            elif setup == "Pullback":
+                was_there_1_ago = detect_pullback(df_exec.iloc[:-1]) is not None
+                was_there_2_ago = detect_pullback(df_exec.iloc[:-2]) is not None
+
+            if was_there_2_ago:
+                signal_age = 2
+            elif was_there_1_ago:
+                signal_age = 1
+            else:
+                signal_age = 0
+
+        # Drop signals older than 2 candles
+        if signal_age > MAX_SIGNAL_AGE:
+            return None
 
         # Room and obstacle
         room_info     = check_liquidity_hole(df_exec, direction)
         obstacle_info = check_firewalls(df_exec, direction)
+
+        # FILTER: Drop signals where next swing is less than 0.5% away — too crowded
+        room_reason = room_info.get("reason", "")
+        if room_info["room"] == "Limited":
+            # Extract distance from reason string e.g. "Next swing 0.1% away"
+            try:
+                dist_str = room_reason.split("Next swing ")[1].split("%")[0]
+                dist_val = float(dist_str)
+                if dist_val < 0.5:
+                    return None  # Too close to next swing, no room at all
+            except Exception:
+                pass
 
         # Candle quality
         cq = classify_candle(df_exec, -1)
         if cq == "weak":
             cq = classify_candle(df_exec, -2)
 
+        # FILTER: Drop weak candle quality signals entirely
+        if cq == "weak":
+            return None
+
         score, tier, conviction_parts = score_signal(
             signal_age, setup, bias_15m, direction,
             room_info["room"], obstacle_info["obstacle"],
             rsi, cq
         )
+
+        # FILTER: Drop very low quality signals (score < 30)
+        if score < 30:
+            return None
 
         display_name = normalize_pair(pair, source)
 
@@ -971,7 +1009,7 @@ def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
             "room_reason":  room_info["reason"],
             "obstacle":     obstacle_info["obstacle"],
             "obs_reason":   obstacle_info["reason"],
-            "freshness":    "New" if signal_age == 0 else f"{signal_age} candle ago",
+            "freshness":    "New" if signal_age == 0 else f"{signal_age} candle{'s' if signal_age > 1 else ''} ago",
             "signal_age":   signal_age,
             "price":        round(price, 4),
         }
@@ -1169,7 +1207,7 @@ def render_scanner_table(df: pd.DataFrame, direction_filter: str, show_all: bool
         st.info("No signals found. Try refreshing or check exchange connectivity.")
         return
 
-    # Filter
+    # Filter by direction
     filtered = df.copy()
     if direction_filter == "Longs":
         filtered = filtered[filtered["direction"] == "Long"]
@@ -1183,97 +1221,66 @@ def render_scanner_table(df: pd.DataFrame, direction_filter: str, show_all: bool
         st.info(f"No {direction_filter.lower()} signals found.")
         return
 
-    # Render as HTML table
-    rows_html = ""
+    # Build clean display dataframe
+    rows = []
     for _, row in display_df.iterrows():
-        tier   = row.get("tier", "LOW")
-        age    = row.get("signal_age", 0)
-        score  = row.get("score", 0)
-        grey   = age > MAX_SIGNAL_AGE
+        tier      = row.get("tier", "LOW")
+        direction = row.get("direction", "—")
+        dir_arrow = "↑ Long" if direction == "Long" else "↓ Short"
 
-        dir_color = "#155724" if row.get("direction") == "Long" else "#721c24"
-        dir_icon  = "↑" if row.get("direction") == "Long" else "↓"
-
-        conviction_text = row.get("conviction", "—")
-        tier_label = conviction_text.split("(")[0].strip()
+        conviction_text   = row.get("conviction", "—")
         conviction_detail = conviction_text.split("(")[1].rstrip(")") if "(" in conviction_text else "—"
 
-        bias_raw = str(row.get("bias_15m", "Neutral")).lower()
-        bias_html = (f'<span class="tag-bullish">Bullish</span>'  if "bullish" in bias_raw else
-                     f'<span class="tag-bearish">Bearish</span>'  if "bearish" in bias_raw else
-                     f'<span class="tag-neutral">Neutral</span>')
-
-        rsi_val  = row.get("rsi", "—")
-        rsi_html = f"{rsi_val}"
-        if rsi_val != "—" and isinstance(rsi_val, (int, float)):
+        rsi_val = row.get("rsi", "—")
+        rsi_str = str(rsi_val)
+        if isinstance(rsi_val, (int, float)):
             if rsi_val > 70:
-                rsi_html = f'<span style="color:#721c24;">{rsi_val} ⚠</span>'
+                rsi_str = f"{rsi_val} ⚠ High"
             elif rsi_val < 30:
-                rsi_html = f'<span style="color:#155724;">{rsi_val} ⚠</span>'
+                rsi_str = f"{rsi_val} ⚠ Low"
 
-        room_label   = row.get("room",       "—")
-        room_reason  = row.get("room_reason","")
-        obs_label    = row.get("obstacle",   "—")
-        obs_reason   = row.get("obs_reason", "")
+        room_label  = row.get("room", "—")
+        room_reason = row.get("room_reason", "")
+        obs_label   = row.get("obstacle", "—")
+        obs_reason  = row.get("obs_reason", "")
 
-        freshness = row.get("freshness", "—")
-        fresh_color = "#155724" if freshness == "New" else \
-                      "#856404" if "1 candle" in str(freshness) else "#6c757d"
+        tier_icon = "🟢" if tier == "HIGH" else "🟡" if tier == "MEDIUM" else "🔴"
 
-        pair_display = row.get("pair",  "—")
-        tf_display   = row.get("tf",    "—")
-        setup_display= row.get("setup", "—")
+        rows.append({
+            "Pair":           f"{row.get('pair','—')} ({row.get('source','').upper()})",
+            "Setup":          row.get("setup", "—"),
+            "Direction":      dir_arrow,
+            "Conviction":     f"{tier_icon} {tier}",
+            "Reason":         conviction_detail,
+            "15m Bias":       row.get("bias_15m", "—"),
+            "RSI":            rsi_str,
+            "Room":           f"{room_label} — {room_reason}",
+            "Obstacle":       f"{obs_label} — {obs_reason}" if obs_reason else obs_label,
+            "Freshness":      row.get("freshness", "—"),
+            "Score":          row.get("score", 0),
+        })
 
-        style = "opacity:0.5;" if grey else ""
-        tier_color = "#155724" if tier == "HIGH" else "#856404" if tier == "MEDIUM" else "#721c24"
+    display = pd.DataFrame(rows)
 
-        rows_html += f"""
-        <tr style="{style}">
-            <td><b>{pair_display}</b><br><span style="color:#6c757d;font-size:0.75rem;">{row.get('source','').upper()}</span></td>
-            <td style="color:#6c757d;">{tf_display}</td>
-            <td>{setup_display}</td>
-            <td style="color:{dir_color}; font-weight:700;">{dir_icon} {row.get('direction','—')}</td>
-            <td>
-                <span style="color:{tier_color}; font-weight:700;">{tier_label}</span>
-                <br><span style="color:#6c757d; font-size:0.75rem;">{conviction_detail}</span>
-            </td>
-            <td>{bias_html}</td>
-            <td>{rsi_html}</td>
-            <td>
-                <b>{room_label}</b>
-                <br><span style="color:#6c757d; font-size:0.75rem;">{room_reason}</span>
-            </td>
-            <td>
-                <b>{obs_label}</b>
-                <br><span style="color:#6c757d; font-size:0.75rem;">{obs_reason}</span>
-            </td>
-            <td style="color:{fresh_color}; font-weight:600;">{freshness}</td>
-        </tr>
-        """
-
-    table_html = f"""
-    <table class="scanner-table">
-        <thead>
-            <tr>
-                <th>Pair</th>
-                <th>TF</th>
-                <th>Setup</th>
-                <th>Direction</th>
-                <th>Conviction</th>
-                <th>Market Bias</th>
-                <th>RSI</th>
-                <th>Room to Move</th>
-                <th>Nearby Obstacle</th>
-                <th>Signal Freshness</th>
-            </tr>
-        </thead>
-        <tbody>
-            {rows_html}
-        </tbody>
-    </table>
-    """
-    st.markdown(table_html, unsafe_allow_html=True)
-    st.caption(f"Showing {len(display_df)} of {len(filtered)} signals · Sorted by conviction score")
+    st.dataframe(
+        display,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Pair":       st.column_config.TextColumn("Pair", width="medium"),
+            "Setup":      st.column_config.TextColumn("Setup", width="small"),
+            "Direction":  st.column_config.TextColumn("Direction", width="small"),
+            "Conviction": st.column_config.TextColumn("Conviction", width="small"),
+            "Reason":     st.column_config.TextColumn("Why", width="large"),
+            "15m Bias":   st.column_config.TextColumn("15m Bias", width="small"),
+            "RSI":        st.column_config.TextColumn("RSI", width="small"),
+            "Room":       st.column_config.TextColumn("Room to Move", width="medium"),
+            "Obstacle":   st.column_config.TextColumn("Obstacle", width="medium"),
+            "Freshness":  st.column_config.TextColumn("Freshness", width="small"),
+            "Score":      st.column_config.ProgressColumn("Score", min_value=0, max_value=100, width="small"),
+        }
+    )
+    st.caption(f"Showing {len(display_df)} of {len(filtered)} signals · Sorted by score")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
