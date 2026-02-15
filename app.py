@@ -701,8 +701,23 @@ def get_btc_regime() -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @st.cache_data(ttl=60)
-def get_btc_1h_data() -> pd.DataFrame:
-    df = binance_klines("BTCUSDT", "1h", 60)
+def get_btc_1h_data(source: str = "okx") -> pd.DataFrame:
+    """Fetch BTC 1H data from chosen source with automatic fallback."""
+    df = pd.DataFrame()
+    # Try chosen source first
+    if source == "okx":
+        df = okx_klines("BTC-USDT-SWAP", "1H", limit=60)
+    elif source == "binance":
+        df = binance_klines("BTCUSDT", "1h", 60)
+    elif source == "gate":
+        df = gate_klines("BTC_USDT", "1h", limit=60)
+    # Auto-fallback chain if chosen source fails
+    if df.empty and source != "okx":
+        df = okx_klines("BTC-USDT-SWAP", "1H", limit=60)
+    if df.empty and source != "gate":
+        df = gate_klines("BTC_USDT", "1h", limit=60)
+    if df.empty and source != "binance":
+        df = binance_klines("BTCUSDT", "1h", 60)
     if df.empty:
         return pd.DataFrame()
     return add_indicators(df)
@@ -824,10 +839,10 @@ def get_price_path(df: pd.DataFrame, bias: str, sweep: Optional[dict],
 
 
 @st.cache_data(ttl=60)
-def build_btc_liquidity_panel() -> dict:
-    df = get_btc_1h_data()
+def build_btc_liquidity_panel(source: str = "okx") -> dict:
+    df = get_btc_1h_data(source)
     if df.empty:
-        return {"error": "Unable to fetch BTC 1H data"}
+        return {"error": f"Unable to fetch BTC 1H data from {source.upper()} or any fallback source"}
 
     bias    = get_bias(df)
     levels  = get_liquidity_levels(df)
@@ -836,7 +851,6 @@ def build_btc_liquidity_panel() -> dict:
     zone    = get_pullback_zone(df, impulse)
     path    = get_price_path(df, bias, sweep, impulse)
 
-    # RSI
     rsi_val = df.iloc[-1].get("rsi14", np.nan)
 
     return {
@@ -848,6 +862,7 @@ def build_btc_liquidity_panel() -> dict:
         "narrative": path,
         "price":     levels.get("price"),
         "rsi":       round(rsi_val, 1) if not pd.isna(rsi_val) else None,
+        "source":    source.upper(),
     }
 
 
@@ -1018,34 +1033,40 @@ def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
 
 
 @st.cache_data(ttl=60)
-def run_scanner(tf: str) -> pd.DataFrame:
+def run_scanner(tf: str, exchanges: list = None) -> pd.DataFrame:
     """
     Run the full multi-pair scanner for a given timeframe.
-    Pulls top pairs from OKX, Gate.io, MEXC.
+    exchanges: list of exchange keys e.g. ["okx", "gate", "mexc"]
     """
-    results = []
+    if exchanges is None:
+        exchanges = ["okx", "gate", "mexc"]
 
-    # Gather pairs
+    results = []
     pair_sources = []
 
-    okx_pairs = okx_top_pairs(35)
-    for p in okx_pairs[:30]:
-        pair_sources.append((p, "okx"))
+    if "okx" in exchanges:
+        okx_pairs = okx_top_pairs(35)
+        for p in okx_pairs[:30]:
+            pair_sources.append((p, "okx"))
 
-    gate_pairs = gate_top_pairs(25)
-    for p in gate_pairs[:20]:
-        # Avoid duplicates
-        norm = normalize_pair(p, "gate")
-        existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
-        if norm not in existing:
-            pair_sources.append((p, "gate"))
+    if "gate" in exchanges or "gateio" in exchanges:
+        gate_pairs = gate_top_pairs(25)
+        for p in gate_pairs[:20]:
+            norm = normalize_pair(p, "gate")
+            existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
+            if norm not in existing:
+                pair_sources.append((p, "gate"))
 
-    mexc_pairs = mexc_top_pairs(20)
-    for p in mexc_pairs[:15]:
-        norm = normalize_pair(p, "mexc")
-        existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
-        if norm not in existing:
-            pair_sources.append((p, "mexc"))
+    if "mexc" in exchanges:
+        mexc_pairs = mexc_top_pairs(20)
+        for p in mexc_pairs[:15]:
+            norm = normalize_pair(p, "mexc")
+            existing = {normalize_pair(x[0], x[1]) for x in pair_sources}
+            if norm not in existing:
+                pair_sources.append((p, "mexc"))
+
+    if not pair_sources:
+        return pd.DataFrame()
 
     # Limit total pairs
     pair_sources = pair_sources[:50]
@@ -1299,13 +1320,29 @@ def main():
                 unsafe_allow_html=True)
 
     # Top controls
-    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 1, 4])
+    ctrl_col1, ctrl_col2, ctrl_col3 = st.columns([1, 2, 3])
     with ctrl_col1:
         if st.button("🔄 Scan Now"):
             st.cache_data.clear()
             st.rerun()
     with ctrl_col2:
-        st.caption("⚡ Engines: A (3m/5m) + B (BTC 1H)")
+        liq_source = st.selectbox(
+            "BTC Liquidity Source",
+            ["OKX", "Binance", "Gate.io"],
+            index=0,
+            help="Choose data source for BTC Liquidity Engine. Auto-fallback if unavailable.",
+            key="liq_source"
+        )
+    with ctrl_col3:
+        scanner_exchanges = st.multiselect(
+            "Scanner Exchanges",
+            ["OKX", "Gate.io", "MEXC"],
+            default=["OKX", "Gate.io", "MEXC"],
+            help="Choose which exchanges to scan for signals.",
+            key="scanner_exchanges"
+        )
+        if not scanner_exchanges:
+            scanner_exchanges = ["OKX"]  # always need at least one
 
     st.divider()
 
@@ -1317,8 +1354,15 @@ def main():
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
     # ── BTC Liquidity Panel ───────────────────────────────────────────────
-    with st.spinner("Loading BTC liquidity engine..."):
-        liq_panel = build_btc_liquidity_panel()
+    liq_src_key = liq_source.lower().replace(".", "")  # "okx" / "binance" / "gateio"
+    if liq_src_key == "gateio":
+        liq_src_key = "gate"
+    with st.spinner(f"Loading BTC liquidity engine ({liq_source})..."):
+        liq_panel = build_btc_liquidity_panel(liq_src_key)
+    # Show which source actually responded
+    src_used = liq_panel.get("source", liq_source.upper())
+    if src_used != liq_source.upper() and "error" not in liq_panel:
+        st.caption(f"⚠️ {liq_source} unavailable — showing data from {src_used}")
     render_liquidity_panel(liq_panel)
 
     st.divider()
@@ -1343,7 +1387,7 @@ def main():
                 show_all = st.toggle("Show all signals", key=f"all_{tf}")
 
             with st.spinner(f"Running {tf} scanner across 30+ pairs..."):
-                scanner_df = run_scanner(tf)
+                scanner_df = run_scanner(tf, exchanges=[e.lower().replace(".", "") for e in scanner_exchanges])
 
             # Summary stats
             if not scanner_df.empty:
