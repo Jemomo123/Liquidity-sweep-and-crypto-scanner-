@@ -93,7 +93,8 @@ st.markdown("""
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
 
-COMPRESSION_THRESHOLD = 0.002   # 0.2% nearness for SQZ/CROSSOVER
+COMPRESSION_THRESHOLD = 0.002   # 0.2% = 0.20% cluster spread threshold (Nearness Engine)
+COMPRESSION_MIN_CANDLES = 3      # Must persist ≥3 consecutive candles
 EXPANSION_BODY_RATIO  = 1.5     # elephant: body ≥ 150% avg body
 EXPANSION_WICK_RATIO  = 0.60    # tail: wick ≥ 60% of range
 TREND_SMA_SEP         = 0.012   # 1.2% separation for reversal setups
@@ -347,48 +348,119 @@ def get_swing_levels(df: pd.DataFrame, lookback: int = 40) -> tuple:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PART 1 — COMPRESSION ENGINE
+# PART 0.5 — NEARNESS ENGINE (FOUNDATION OF EDGE)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cluster_spread_pct(row) -> float:
+    """
+    CLUSTER SPREAD % = ((max - min) / close) * 100
+    Measures total width of the [close, sma20, sma100] cluster.
+    """
+    p    = row.get("close", np.nan)
+    s20  = row.get("sma20",  np.nan)
+    s100 = row.get("sma100", np.nan)
+    if any(pd.isna(x) for x in [p, s20, s100]) or p == 0:
+        return 999.0
+    cluster = [p, s20, s100]
+    return ((max(cluster) - min(cluster)) / p) * 100
+
+
+def nearness_engine(df: pd.DataFrame) -> dict:
+    """
+    NEARNESS ENGINE — Precision compression detector.
+
+    Rules:
+    1. Compute CLUSTER_SPREAD_PCT = ((max - min) / close) * 100
+       for [close, sma20, sma100]
+    2. Compression = spread <= 0.20%
+    3. compression_active = True only if last 3 candles are ALL in compression
+    4. Returns spread of current candle and active flag.
+    """
+    if df.empty or "sma20" not in df.columns or "sma100" not in df.columns or len(df) < COMPRESSION_MIN_CANDLES:
+        return {
+            "compression_active": False,
+            "spread_pct": None,
+            "candles_in_comp": 0,
+            "status": "INACTIVE",
+        }
+
+    # Check last N candles all meet threshold
+    tail = df.tail(COMPRESSION_MIN_CANDLES)
+    spreads = [cluster_spread_pct(tail.iloc[i]) for i in range(len(tail))]
+    all_in  = all(s <= COMPRESSION_THRESHOLD * 100 for s in spreads)
+    current_spread = spreads[-1]
+
+    # Count consecutive candles currently in compression (from end backwards)
+    candles_in = 0
+    for s in reversed(spreads):
+        if s <= COMPRESSION_THRESHOLD * 100:
+            candles_in += 1
+        else:
+            break
+
+    return {
+        "compression_active": all_in,
+        "spread_pct":         round(current_spread, 3),
+        "candles_in_comp":    candles_in,
+        "status":             "ACTIVE" if all_in else "INACTIVE",
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PART 1 — COMPRESSION ENGINE (depends on Nearness Engine)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _in_compression(row) -> bool:
-    p, s20, s100 = row.get("close", np.nan), row.get("sma20", np.nan), row.get("sma100", np.nan)
-    if any(pd.isna(x) for x in [p, s20, s100]) or min(p, s20, s100) == 0:
-        return False
-    spread = (max(p, s20, s100) - min(p, s20, s100)) / p
-    return spread <= COMPRESSION_THRESHOLD
+    """Single-candle check using cluster spread formula."""
+    return cluster_spread_pct(row) <= (COMPRESSION_THRESHOLD * 100)
 
 
 def detect_compression_state(df: pd.DataFrame) -> dict:
     """
-    Always detect and report.
-    Returns: { state: 'SQZ' | 'CROSSOVER' | 'NONE', spread: float, detail: str }
+    Uses Nearness Engine for precision.
+    Returns: { state, spread_pct, compression_active, candles_in_comp, detail }
+    state: 'SQZ' | 'CROSSOVER' | 'NONE'
     """
-    if df.empty or "sma20" not in df.columns or len(df) < 2:
-        return {"state":"NONE","spread":None,"detail":""}
+    if df.empty or "sma20" not in df.columns or len(df) < 3:
+        return {
+            "state": "NONE", "spread_pct": None,
+            "compression_active": False, "candles_in_comp": 0, "detail": ""
+        }
 
+    nearness = nearness_engine(df)
+
+    if not nearness["compression_active"]:
+        return {
+            "state": "NONE",
+            "spread_pct": nearness["spread_pct"],
+            "compression_active": False,
+            "candles_in_comp": nearness["candles_in_comp"],
+            "detail": f"Spread:{nearness['spread_pct']}% — INACTIVE",
+        }
+
+    # Compression is active — determine SQZ vs CROSSOVER
     last = df.iloc[-1]
     prev = df.iloc[-2]
+    s20, s100   = last.get("sma20", np.nan), last.get("sma100", np.nan)
+    ps20, ps100 = prev.get("sma20", np.nan), prev.get("sma100", np.nan)
 
-    if not _in_compression(last):
-        return {"state":"NONE","spread":None,"detail":""}
-
-    s20  = last.get("sma20",  np.nan)
-    s100 = last.get("sma100", np.nan)
-    p    = last["close"]
-    spread = (max(p, s20, s100) - min(p, s20, s100)) / p
-
-    # CROSSOVER: SMA20 crossed SMA100 between prev and last
-    ps20  = prev.get("sma20",  np.nan)
-    ps100 = prev.get("sma100", np.nan)
     is_cross = False
-    if not any(pd.isna(x) for x in [ps20, ps100]):
-        was_above = ps20 > ps100
-        now_above = s20  > s100
-        is_cross  = was_above != now_above
+    if not any(pd.isna(x) for x in [ps20, ps100, s20, s100]):
+        is_cross = (ps20 > ps100) != (s20 > s100)
 
+    p = last["close"]
     state  = "CROSSOVER" if is_cross else "SQZ"
-    detail = f"P:{p:.4f} SMA20:{s20:.4f} SMA100:{s100:.4f} Spread:{spread*100:.3f}%"
-    return {"state": state, "spread": round(spread * 100, 3), "detail": detail}
+    detail = (f"P:{p:.4f} SMA20:{s20:.4f} SMA100:{s100:.4f} "
+              f"Spread:{nearness['spread_pct']}% "
+              f"({nearness['candles_in_comp']} candles)")
+
+    return {
+        "state":              state,
+        "spread_pct":         nearness["spread_pct"],
+        "compression_active": True,
+        "candles_in_comp":    nearness["candles_in_comp"],
+        "detail":             detail,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -431,12 +503,27 @@ def detect_expansion(df: pd.DataFrame) -> Optional[dict]:
 
     sub = df.tail(8).reset_index(drop=True)
 
-    # Find most recent compression candle
+    # Find most recent candle that was part of a compression state
+    # Use single-candle spread check (Nearness Engine row-level)
     comp_idx = None
     for i in range(len(sub) - 1, -1, -1):
         if _in_compression(sub.iloc[i]):
             comp_idx = i
             break
+
+    # Also require that compression was sustained (≥3 candles) ending at comp_idx
+    # Check using full df nearness engine — only proceed if compression was active recently
+    full_nearness = nearness_engine(df)
+    # Allow expansion detection if compression was active in last scan
+    # (nearness may now be INACTIVE because expansion just started — that's correct)
+    # We look back to see if it WAS active within last 5 candles
+    was_active = False
+    for lookback in range(3, min(8, len(df))):
+        if nearness_engine(df.iloc[:-lookback] if lookback > 0 else df).get("compression_active"):
+            was_active = True
+            break
+    if not was_active and not full_nearness["compression_active"]:
+        return None
 
     if comp_idx is None:
         return None
@@ -940,27 +1027,29 @@ def scan_pair(pair: str, source: str, tf: str) -> Optional[dict]:
                 f"{signal_type} {direction.upper()}", tier)
 
         return {
-            "pair":        disp,
-            "raw_pair":    pair,
-            "source":      source,
-            "tf":          tf,
-            "signal_type": signal_type,
-            "direction":   direction.capitalize(),
-            "candle_type": candle_type or "—",
-            "score":       score,
-            "tier":        tier,
-            "parts":       parts,
-            "bias_15m":    bias_15m.capitalize(),
-            "rsi":         round(rsi, 1) if not pd.isna(rsi) else "—",
-            "room":        room,
-            "room_d":      room_d,
-            "obs":         obs,
-            "obs_d":       obs_d,
-            "freshness":   freshness,
-            "signal_age":  signal_age,
-            "comp_state":  comp["state"],
-            "price":       round(price, 4),
-            "health":      health_info,
+            "pair":          disp,
+            "raw_pair":      pair,
+            "source":        source,
+            "tf":            tf,
+            "signal_type":   signal_type,
+            "direction":     direction.capitalize(),
+            "candle_type":   candle_type or "—",
+            "score":         score,
+            "tier":          tier,
+            "parts":         parts,
+            "bias_15m":      bias_15m.capitalize(),
+            "rsi":           round(rsi, 1) if not pd.isna(rsi) else "—",
+            "room":          room,
+            "room_d":        room_d,
+            "obs":           obs,
+            "obs_d":         obs_d,
+            "freshness":     freshness,
+            "signal_age":    signal_age,
+            "comp_state":    comp["state"],
+            "spread_pct":    comp.get("spread_pct"),
+            "candles_in_comp": comp.get("candles_in_comp", 0),
+            "price":         round(price, 4),
+            "health":        health_info,
         }
     except Exception:
         return None
@@ -1150,6 +1239,21 @@ def render_signal_card(row: dict):
 
     reason = " • ".join(parts)
 
+    # Nearness Engine debug display
+    spread_pct   = row.get("spread_pct")
+    candles_in   = row.get("candles_in_comp", 0)
+    spread_str   = f"{spread_pct:.3f}%" if spread_pct is not None else "—"
+    spread_col   = "#1db954" if (spread_pct is not None and spread_pct <= 0.20) else "#e53935"
+    comp_status  = "ACTIVE" if row.get("comp_state") not in ("NONE","") else "INACTIVE"
+    comp_s_col   = "#1db954" if comp_status == "ACTIVE" else "#888"
+    nearness_html = (
+        f'<span style="font-size:0.68rem;font-family:IBM Plex Mono,monospace;">' +
+        f'CLUSTER SPREAD: <b style="color:{spread_col};">{spread_str}</b>' +
+        f' &nbsp;|' +
+        f' COMPRESSION: <b style="color:{comp_s_col};">{comp_status}</b>' +
+        f' ({candles_in} candles)</span>'
+    )
+
     st.markdown(f"""
     <div class="{css}">
       <div class="sig-type">{sig} &nbsp;{comp_tag}&nbsp;{badge}&nbsp;{score_bar}</div>
@@ -1161,7 +1265,8 @@ def render_signal_card(row: dict):
         </span>
       </div>
       <div class="sig-body">
-        {health_html}{bias_tag}
+        {nearness_html}
+        <br>{health_html}{bias_tag}
         &nbsp; Candle: <b>{row.get('candle_type','—')}</b>
         &nbsp; Freshness: <b>{row.get('freshness','—')}</b>
         <br>Room: <b>{row.get('room','—')}</b> — {row.get('room_d','')}
