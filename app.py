@@ -765,25 +765,50 @@ def assess_trend_health(df: pd.DataFrame, direction: str) -> dict:
 
 
 def detect_pullback(df: pd.DataFrame) -> Optional[dict]:
-    """Pullback to SMA20 with elephant/tail confirmation candle."""
-    if df.empty or len(df) < 10 or "sma20" not in df.columns:
+    """
+    Pullback continuation — forward only, no backwards analysis.
+
+    Rules (read forward only from current candle):
+    1. Previous candle wick touched SMA20
+    2. Previous candle CLOSED on the correct side of SMA20 (not broken through)
+    3. Current candle CLOSES on the correct side of SMA20 (trend holding)
+    4. Confirmation candle = elephant or tail on prev or current
+
+    LONG:  prev low touched SMA20, prev AND current close ABOVE SMA20
+    SHORT: prev high touched SMA20, prev AND current close BELOW SMA20
+    """
+    if df.empty or len(df) < 5 or "sma20" not in df.columns:
         return None
+
     last, prev = df.iloc[-1], df.iloc[-2]
     s20p = prev.get("sma20", np.nan)
     s20l = last.get("sma20", np.nan)
     if pd.isna(s20p) or pd.isna(s20l):
         return None
 
-    low_touch  = prev["low"]  <= s20p * 1.005 and prev["close"] > s20p
-    high_touch = prev["high"] >= s20p * 0.995 and prev["close"] < s20p
+    # LONG: wick touched SMA20, both closes stayed above
+    long_touch  = (prev["low"]   <= s20p * 1.005
+                   and prev["close"] >  s20p
+                   and last["close"] >  s20l)
 
-    ctype, cdir = _classify_candle(last)
+    # SHORT: wick touched SMA20, both closes stayed below
+    short_touch = (prev["high"]  >= s20p * 0.995
+                   and prev["close"] <  s20p
+                   and last["close"] <  s20l)
+
+    if not long_touch and not short_touch:
+        return None
+
+    # Confirmation candle — elephant or tail
+    ctype, _ = _classify_candle(last)
     if not ctype:
-        ctype, cdir = _classify_candle(prev)
+        ctype, _ = _classify_candle(prev)
+    if not ctype:
+        return None
 
-    if low_touch and ctype and last["close"] > s20l:
+    if long_touch:
         return {"direction": "long", "candle_type": ctype}
-    if high_touch and ctype and last["close"] < s20l:
+    if short_touch:
         return {"direction": "short", "candle_type": ctype}
     return None
 
