@@ -418,47 +418,77 @@ def _in_compression(row) -> bool:
 def detect_compression_state(df: pd.DataFrame) -> dict:
     """
     Uses Nearness Engine for precision.
+
+    CROSSOVER — report on 1 candle minimum (includes V-shapes and single touches).
+    SQZ       — report only when 3+ consecutive candles are in compression.
+
     Returns: { state, spread_pct, compression_active, candles_in_comp, detail }
     state: 'SQZ' | 'CROSSOVER' | 'NONE'
     """
-    if df.empty or "sma20" not in df.columns or len(df) < 3:
+    if df.empty or "sma20" not in df.columns or len(df) < 2:
         return {
             "state": "NONE", "spread_pct": None,
             "compression_active": False, "candles_in_comp": 0, "detail": ""
         }
 
-    nearness = nearness_engine(df)
-
-    if not nearness["compression_active"]:
-        return {
-            "state": "NONE",
-            "spread_pct": nearness["spread_pct"],
-            "compression_active": False,
-            "candles_in_comp": nearness["candles_in_comp"],
-            "detail": f"Spread:{nearness['spread_pct']}% — INACTIVE",
-        }
-
-    # Compression is active — determine SQZ vs CROSSOVER
     last = df.iloc[-1]
     prev = df.iloc[-2]
-    s20, s100   = last.get("sma20", np.nan), last.get("sma100", np.nan)
+    s20,  s100  = last.get("sma20", np.nan), last.get("sma100", np.nan)
     ps20, ps100 = prev.get("sma20", np.nan), prev.get("sma100", np.nan)
 
+    current_spread = cluster_spread_pct(last)
+    in_comp_now    = current_spread <= (COMPRESSION_THRESHOLD * 100)
+
+    if not in_comp_now:
+        return {
+            "state": "NONE",
+            "spread_pct": round(current_spread, 3),
+            "compression_active": False,
+            "candles_in_comp": 0,
+            "detail": f"Spread:{round(current_spread,3)}% — INACTIVE",
+        }
+
+    # Count consecutive candles in compression from current candle backwards
+    candles_in = 0
+    for i in range(len(df) - 1, max(len(df) - 20, -1), -1):
+        if cluster_spread_pct(df.iloc[i]) <= (COMPRESSION_THRESHOLD * 100):
+            candles_in += 1
+        else:
+            break
+
+    # Detect CROSSOVER — SMA20 crosses SMA100 on current candle
+    # Valid on just 1 candle (V-shapes, single touches, multi-candle all qualify)
     is_cross = False
     if not any(pd.isna(x) for x in [ps20, ps100, s20, s100]):
         is_cross = (ps20 > ps100) != (s20 > s100)
 
+    if is_cross:
+        # CROSSOVER — report immediately on 1 candle
+        state = "CROSSOVER"
+        compression_active = True
+    elif candles_in >= COMPRESSION_MIN_CANDLES:
+        # SQZ — requires 3+ consecutive candles
+        state = "SQZ"
+        compression_active = True
+    else:
+        # In compression but not yet SQZ and no crossover — stay silent
+        return {
+            "state": "NONE",
+            "spread_pct": round(current_spread, 3),
+            "compression_active": False,
+            "candles_in_comp": candles_in,
+            "detail": f"Spread:{round(current_spread,3)}% — building ({candles_in}/3 candles)",
+        }
+
     p = last["close"]
-    state  = "CROSSOVER" if is_cross else "SQZ"
     detail = (f"P:{p:.4f} SMA20:{s20:.4f} SMA100:{s100:.4f} "
-              f"Spread:{nearness['spread_pct']}% "
-              f"({nearness['candles_in_comp']} candles)")
+              f"Spread:{round(current_spread,3)}% ({candles_in} candles)")
 
     return {
         "state":              state,
-        "spread_pct":         nearness["spread_pct"],
-        "compression_active": True,
-        "candles_in_comp":    nearness["candles_in_comp"],
+        "spread_pct":         round(current_spread, 3),
+        "compression_active": compression_active,
+        "candles_in_comp":    candles_in,
         "detail":             detail,
     }
 
