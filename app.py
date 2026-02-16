@@ -518,60 +518,37 @@ def _classify_candle(row) -> tuple:
 
 def detect_expansion(df: pd.DataFrame) -> Optional[dict]:
     """
-    Forward-only expansion detection from compression.
+    Expansion detection — current state only.
 
-    Rules (from prompt):
-    1. Find most recent compression candle in last 6 candles
-    2. First candle AFTER compression = breakout candle (monitored)
-    3. ENTRY = 1st or 2nd candle after breakout that is elephant or tail
-    4. If neither qualifies → no signal
+    Current candle is the expansion candle IF:
+    1. Previous candle WAS in compression (cluster spread <= 0.20%)
+    2. Current candle is NOT in compression (broke out)
+    3. Current candle is elephant or tail
 
-    Returns: { direction, candle_type, signal_age } or None
+    That is it. No history. No lookback loops.
     """
-    if df.empty or len(df) < 5 or "sma20" not in df.columns:
+    if df.empty or len(df) < 3 or "sma20" not in df.columns:
         return None
 
-    sub = df.tail(8).reset_index(drop=True)
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    # Find most recent candle that was part of a compression state
-    # Use single-candle spread check (Nearness Engine row-level)
-    comp_idx = None
-    for i in range(len(sub) - 1, -1, -1):
-        if _in_compression(sub.iloc[i]):
-            comp_idx = i
-            break
-
-    # Also require that compression was sustained (≥3 candles) ending at comp_idx
-    # Check using full df nearness engine — only proceed if compression was active recently
-    full_nearness = nearness_engine(df)
-    # Allow expansion detection if compression was active in last scan
-    # (nearness may now be INACTIVE because expansion just started — that's correct)
-    # We look back to see if it WAS active within last 5 candles
-    was_active = False
-    for lookback in range(3, min(8, len(df))):
-        if nearness_engine(df.iloc[:-lookback] if lookback > 0 else df).get("compression_active"):
-            was_active = True
-            break
-    if not was_active and not full_nearness["compression_active"]:
+    # Previous candle must have been in compression
+    if not _in_compression(prev):
         return None
 
-    if comp_idx is None:
+    # Current candle must have broken out of compression
+    if _in_compression(curr):
         return None
 
-    # Candles after compression
-    post = sub.iloc[comp_idx + 1:].reset_index(drop=True)
-    if len(post) == 0:
-        return None
-
-    # Check 1st and 2nd candle after compression
-    for i in range(min(2, len(post))):
-        ctype, direction = _classify_candle(post.iloc[i])
-        if ctype and direction:
-            return {
-                "direction":   direction,
-                "candle_type": ctype,
-                "signal_age":  i,  # 0 = current candle, 1 = one candle ago
-            }
+    # Current candle must be elephant or tail
+    ctype, direction = _classify_candle(curr)
+    if ctype and direction:
+        return {
+            "direction":   direction,
+            "candle_type": ctype,
+            "signal_age":  0,
+        }
     return None
 
 
@@ -766,43 +743,42 @@ def assess_trend_health(df: pd.DataFrame, direction: str) -> dict:
 
 def detect_pullback(df: pd.DataFrame) -> Optional[dict]:
     """
-    Pullback continuation — forward only, no backwards analysis.
+    Pullback — current candle only.
 
-    Rules (read forward only from current candle):
-    1. Previous candle wick touched SMA20
-    2. Previous candle CLOSED on the correct side of SMA20 (not broken through)
-    3. Current candle CLOSES on the correct side of SMA20 (trend holding)
-    4. Confirmation candle = elephant or tail on prev or current
+    Current candle is a pullback IF:
+    LONG:
+    - Current candle low touched SMA20 (low <= SMA20 * 1.005)
+    - Current candle CLOSED ABOVE SMA20 (bounced, did not break through)
+    - Current candle is elephant or tail
 
-    LONG:  prev low touched SMA20, prev AND current close ABOVE SMA20
-    SHORT: prev high touched SMA20, prev AND current close BELOW SMA20
+    SHORT:
+    - Current candle high touched SMA20 (high >= SMA20 * 0.995)
+    - Current candle CLOSED BELOW SMA20 (bounced, did not break through)
+    - Current candle is elephant or tail
+
+    No prev candle. No history. Current candle tells the whole story.
     """
-    if df.empty or len(df) < 5 or "sma20" not in df.columns:
+    if df.empty or len(df) < 3 or "sma20" not in df.columns:
         return None
 
-    last, prev = df.iloc[-1], df.iloc[-2]
-    s20p = prev.get("sma20", np.nan)
-    s20l = last.get("sma20", np.nan)
-    if pd.isna(s20p) or pd.isna(s20l):
+    curr = df.iloc[-1]
+    s20  = curr.get("sma20", np.nan)
+    if pd.isna(s20):
         return None
 
-    # LONG: wick touched SMA20, both closes stayed above
-    long_touch  = (prev["low"]   <= s20p * 1.005
-                   and prev["close"] >  s20p
-                   and last["close"] >  s20l)
+    # LONG: low touched SMA20, closed above it
+    long_touch  = (curr["low"]   <= s20 * 1.005
+                   and curr["close"] >  s20)
 
-    # SHORT: wick touched SMA20, both closes stayed below
-    short_touch = (prev["high"]  >= s20p * 0.995
-                   and prev["close"] <  s20p
-                   and last["close"] <  s20l)
+    # SHORT: high touched SMA20, closed below it
+    short_touch = (curr["high"]  >= s20 * 0.995
+                   and curr["close"] <  s20)
 
     if not long_touch and not short_touch:
         return None
 
-    # Confirmation candle — elephant or tail
-    ctype, _ = _classify_candle(last)
-    if not ctype:
-        ctype, _ = _classify_candle(prev)
+    # Must be elephant or tail
+    ctype, _ = _classify_candle(curr)
     if not ctype:
         return None
 
