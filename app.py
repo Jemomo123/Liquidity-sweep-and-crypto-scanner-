@@ -1448,28 +1448,28 @@ def render_signal_card(row: dict):
     conv_col = "#1db954" if tier=="HIGH" else "#f5a623" if tier=="MEDIUM" else "#e53935"
     reason   = " · ".join(parts)
     score    = row.get("score",0)
-    conv_html = f'''
-        <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f0ec;
-                    font-size:0.72rem;color:#555;">
-          <span style="font-weight:800;color:{conv_col};">CONVICTION: {tier}</span>
-          &nbsp;<span style="color:#aaa;font-size:0.68rem;">{score}/100</span>
-          &nbsp;—&nbsp;{reason}
-        </div>
-    '''
+    # Build full HTML in one string — no nested variables that could get escaped
+    reason_safe = reason.replace("<","&lt;").replace(">","&gt;")
 
-    st.markdown(f'''
-    <div style="background:#fff;border-radius:10px;border:1px solid #e4e4e0;
-                border-left:4px solid {border};padding:12px 14px;margin-bottom:10px;">
-      <div style="display:grid;grid-template-columns:2fr 1.2fr 1.2fr 0.8fr 1fr 1fr;gap:10px;align-items:start;">
-        <div>{pair_html}</div>
-        <div>{comp_html}</div>
-        <div>{breakout_html}</div>
-        <div>{rsi_html}</div>
-        <div>{fw_html}</div>
-        <div>{room_html}</div>
-      </div>
-      {conv_html}
-    </div>''', unsafe_allow_html=True)
+    full_html = (
+        f'<div style="background:#fff;border-radius:10px;border:1px solid #e4e4e0;' +
+        f'border-left:4px solid {border};padding:12px 14px;margin-bottom:10px;">' +
+        f'<div style="display:grid;grid-template-columns:2fr 1.2fr 1.2fr 0.8fr 1fr 1fr;gap:10px;align-items:start;">' +
+        f'<div>{pair_html}</div>' +
+        f'<div>{comp_html}</div>' +
+        f'<div>{breakout_html}</div>' +
+        f'<div>{rsi_html}</div>' +
+        f'<div>{fw_html}</div>' +
+        f'<div>{room_html}</div>' +
+        f'</div>' +
+        f'<div style="margin-top:8px;padding-top:8px;border-top:1px solid #f0f0ec;font-size:0.72rem;color:#555;">' +
+        f'<span style="font-weight:800;color:{conv_col};">CONVICTION: {tier}</span>' +
+        f'&nbsp;<span style="color:#aaa;font-size:0.68rem;">{score}/100</span>' +
+        f'&nbsp;&mdash;&nbsp;{reason_safe}' +
+        f'</div>' +
+        f'</div>'
+    )
+    st.markdown(full_html, unsafe_allow_html=True)
 
 
 def render_scan_log():
